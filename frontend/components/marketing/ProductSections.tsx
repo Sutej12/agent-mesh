@@ -1,25 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
 
 import { WORKFLOW_STEPS } from "@/lib/design/agents";
 import { AgentNetwork } from "@/components/marketing/AgentNetwork";
-
-function Reveal({ children, delay = 0 }: { children: ReactNode; delay?: number }) {
-  const reduce = useReducedMotion();
-  return (
-    <motion.div
-      initial={reduce ? false : { opacity: 0, y: 24 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-10%" }}
-      transition={{ duration: 0.55, delay, ease: [0.22, 1, 0.36, 1] }}
-    >
-      {children}
-    </motion.div>
-  );
-}
+import { SectionAmbient } from "@/components/marketing/SectionAmbient";
+import { SectionReveal as Reveal } from "@/components/marketing/SectionReveal";
 
 export function WorkflowSection() {
   const reduce = useReducedMotion();
@@ -35,6 +22,7 @@ export function WorkflowSection() {
 
   return (
     <section className="mkt-section" id="how-it-works">
+      <SectionAmbient variant="dots" />
       <div className="mkt-grid">
         <Reveal>
           <p className="mkt-kicker">03 · The workflow</p>
@@ -58,6 +46,7 @@ export function WorkflowSection() {
 export function CommunicationSection() {
   return (
     <section className="mkt-section mkt-section-dark" id="communication">
+      <SectionAmbient variant="threads" />
       <div className="mkt-grid">
         <Reveal>
           <p className="mkt-kicker light">04 · Agents talk to each other</p>
@@ -75,10 +64,51 @@ export function CommunicationSection() {
   );
 }
 
+const PRODUCT_FRAMES = [
+  {
+    src: "/marketing/tour-command.png",
+    label: "Command",
+    caption: "Submit a brief. Agent Mesh plans specialists and routes models.",
+  },
+  {
+    src: "/marketing/tour-build.png",
+    label: "Build",
+    caption: "Compose a workflow DAG, preview dependencies, then run.",
+  },
+  {
+    src: "/marketing/tour-work.png",
+    label: "Work",
+    caption: "Watch each agent step, costs, and hand-offs as the run progresses.",
+  },
+  {
+    src: "/marketing/tour-messages.png",
+    label: "Messages",
+    caption: "Persistent agent mail and synthesized answers stay with the task.",
+  },
+  {
+    src: "/marketing/tour-settings.png",
+    label: "Settings",
+    caption: "Connect free providers like Groq and Gemini, keep Free Only on.",
+  },
+] as const;
+
 export function WorkspaceSection() {
-  const pillars = ["Tasks", "Agents", "Messages", "Artifacts", "Memory", "Workflows"];
+  const [frame, setFrame] = useState(0);
+  const reduce = useReducedMotion();
+
+  useEffect(() => {
+    if (reduce) {
+      return;
+    }
+    const id = window.setInterval(() => setFrame((n) => (n + 1) % PRODUCT_FRAMES.length), 3200);
+    return () => window.clearInterval(id);
+  }, [reduce]);
+
+  const current = PRODUCT_FRAMES[frame]!;
+
   return (
     <section className="mkt-section" id="workspace">
+      <SectionAmbient variant="veil" />
       <div className="mkt-grid">
         <Reveal>
           <p className="mkt-kicker">05 · One workspace</p>
@@ -88,45 +118,31 @@ export function WorkspaceSection() {
             work, not a pile of disconnected chats.
           </p>
         </Reveal>
-        <ul className="pillar-list">
-          {pillars.map((item, i) => (
-            <Reveal key={item} delay={i * 0.04}>
-              <li>{item}</li>
-            </Reveal>
-          ))}
-        </ul>
+
         <Reveal delay={0.08}>
-          <div className="product-preview" aria-hidden>
-            <div className="product-preview-chrome">
-              <span />
-              <span />
-              <span />
-              <em>localhost · Agent Mesh</em>
+          <div className="product-tour" aria-label="Workspace product tour">
+            <div className="product-tour-tabs" role="tablist">
+              {PRODUCT_FRAMES.map((item, index) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  role="tab"
+                  aria-selected={index === frame}
+                  className={index === frame ? "on" : ""}
+                  onClick={() => setFrame(index)}
+                >
+                  {item.label}
+                </button>
+              ))}
             </div>
-            <div className="product-preview-body">
-              <div className="product-preview-side">
-                <strong>Active task</strong>
-                <p>Go-to-market plan</p>
-              </div>
-              <div className="product-preview-agents">
-                <div className="pp-row on">
-                  <span>Research</span>
-                  <em>Working</em>
-                </div>
-                <div className="pp-row">
-                  <span>Analysis</span>
-                  <em>Waiting</em>
-                </div>
-                <div className="pp-row done">
-                  <span>Planning</span>
-                  <em>Complete</em>
-                </div>
-                <div className="pp-row">
-                  <span>Report</span>
-                  <em>Ready</em>
-                </div>
-              </div>
-            </div>
+            <figure className="product-tour-frame">
+              {/* eslint-disable-next-line @next/next/no-img-element -- local marketing capture */}
+              <img key={current.src} src={current.src} alt={`Agent Mesh ${current.label} workspace`} />
+              <figcaption>
+                <strong>{current.label}</strong>
+                <span>{current.caption}</span>
+              </figcaption>
+            </figure>
           </div>
         </Reveal>
       </div>
@@ -137,6 +153,7 @@ export function WorkspaceSection() {
 export function ModelsSection() {
   return (
     <section className="mkt-section mkt-section-muted">
+      <SectionAmbient variant="dots" />
       <div className="mkt-grid mkt-two">
         <Reveal>
           <p className="mkt-kicker">06 · AI models</p>
@@ -167,6 +184,7 @@ export function ModelsSection() {
 export function FreeAISection() {
   return (
     <section className="mkt-section">
+      <SectionAmbient variant="threads" />
       <div className="mkt-grid mkt-section-narrow">
         <Reveal>
           <p className="mkt-kicker">07 · Free AI</p>

@@ -1,9 +1,15 @@
 import { expect, test } from "@playwright/test";
+import { grantWorkspaceAccess } from "./auth";
+
+test.beforeEach(async ({ page }) => {
+  await grantWorkspaceAccess(page);
+});
 
 test.describe("Agent Mesh smoke (J-2)", () => {
   test("office loads with brand and API badge", async ({ page }) => {
     await page.goto("/office");
-    await expect(page.getByTestId("brand")).toHaveText("Agent Mesh");
+    await expect(page.getByLabel("Agent Mesh marketing site")).toBeVisible();
+    await expect(page.getByTestId("brand")).toHaveText("Command");
     await expect(page.getByTestId("office-tabs")).toBeVisible();
     await expect(page.getByTestId("command-form")).toBeVisible({ timeout: 30_000 });
   });

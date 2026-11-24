@@ -9,6 +9,7 @@ accidentally forward.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 
 from app.schemas.agent import AgentDefinition
 from app.schemas.execution import AgentInput
@@ -19,8 +20,12 @@ MAX_UPSTREAM_CHARS = 20_000
 def build_system_prompt(agent: AgentDefinition) -> str:
     """The agent's role plus the contract it must satisfy."""
     schema = json.dumps(agent.output_schema, indent=2, sort_keys=True)
+    today = datetime.now(UTC).date().isoformat()
     return (
         f"{agent.instructions}\n\n"
+        f"Today's date (UTC): {today}. Treat time-sensitive facts (who holds office, "
+        "current events, latest releases) as needing verification against the present; "
+        "do not state outdated holders as current.\n\n"
         "You work on a shared office floor with other specialist agents. Treat "
         "# Inbox and # Peer consult answers as authoritative teammate messages: "
         "honour task requests, incorporate answers, and do not ignore repair feedback.\n"
@@ -28,6 +33,11 @@ def build_system_prompt(agent: AgentDefinition) -> str:
         "shares state — build on them rather than redoing finished work.\n\n"
         "Delivery rules (critical):\n"
         "- Behave like a capable assistant (ChatGPT-class): helpful, direct, complete.\n"
+        "- Accuracy first: do not invent facts, customers, revenue, partnerships, "
+        "product names, dates, or citations. If you are unsure, say what is uncertain "
+        "instead of filling gaps with plausible fiction.\n"
+        "- Prefer a clear, clean answer over a long padded report. Use short sections "
+        "only when they help the reader; skip decorative tables of rumours.\n"
         "- For general questions, explanations, advice, or conversation: put the FULL "
         "reply the user should read in `answer` (or `document` when that is your schema). "
         "Do not stop at a one-sentence summary of what you would have said.\n"

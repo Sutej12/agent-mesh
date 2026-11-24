@@ -1,257 +1,139 @@
-# AgentMesh | one request, many minds - orchestrated.
+# Agent Mesh
 
-An orchestration engine for specialised AI agents. A user submits one complex request;
-the platform determines what work is required, activates **only** the agents whose
-capabilities are needed, wires them into a workflow graph (sequential, parallel, or
-conditional), routes each agent to an appropriate model provider, validates every
-output, and synthesises a single result.
+Specialist AI agents, coordinated for real work.
+
+Submit one brief. Agent Mesh selects the right specialists, builds a workflow, routes each step to a model provider, and returns a single synthesized result.
+
+**Personal repository:** https://github.com/Soumen2581/Capstone-Project  
+**Wiki:** https://github.com/Soumen2581/Capstone-Project/wiki  
+**Pending uploads:** [`MISSING_SUBMISSION_FILES.md`](MISSING_SUBMISSION_FILES.md)  
+**Audit checklist (Sprint 0–2):** [`docs/AUDIT_CHECKLIST_SPRINT0-2.md`](docs/AUDIT_CHECKLIST_SPRINT0-2.md)
 
 ## Deploy to Render (one click)
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Soumen2581/Capstone-Project)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Sutej12/agent-mesh)
 
 One click provisions everything from [`render.yaml`](render.yaml): PostgreSQL, Redis (Key Value), the FastAPI backend, and the Next.js frontend. The app boots in **demo mode** (simulated AI) with no configuration. For live AI, set `OPENAI_API_KEY` on the `agent-mesh-api` service and redeploy. Details: [docs/operations/render.md](docs/operations/render.md).
 
 ## Screenshots
 
 <p align="center">
-  <img src="docs/images/01-hero-light.jpg" alt="Agent Mesh marketing hero — light theme with agent network" width="900" />
+  <img src="docs/images/product-hero-dark.png" alt="Agent Mesh product site hero" width="900" />
 </p>
 
 <p align="center">
-  <img src="docs/images/02-agents-roster.jpg" alt="Specialist agent roster" width="900" />
+  <img src="docs/images/product-agents-dark.png" alt="Specialist agent roster" width="900" />
 </p>
 
 <p align="center">
-  <img src="docs/images/03-workflow-steps.jpg" alt="Workflow from brief to result" width="900" />
+  <img src="docs/images/product-mesh-dark.png" alt="Agents collaborating over the mesh" width="900" />
 </p>
 
 <p align="center">
-  <img src="docs/images/04-agent-mesh.jpg" alt="Agents collaborating over the mesh" width="900" />
+  <img src="docs/images/product-workspace-dark.png" alt="Workspace product tour" width="900" />
 </p>
 
 <p align="center">
-  <img src="docs/images/05-one-workspace.jpg" alt="One workspace for tasks, agents, and artifacts" width="900" />
+  <img src="docs/images/product-command-dark.png" alt="Command workspace" width="900" />
 </p>
 
 <p align="center">
-  <img src="docs/images/06-office-home.jpg" alt="Office workspace — start a task" width="900" />
+  <img src="docs/images/product-settings-dark.png" alt="Settings and AI providers" width="900" />
 </p>
 
 <p align="center">
-  <img src="docs/images/07-settings-providers.jpg" alt="Settings — light/dark theme and AI providers" width="900" />
+  <img src="docs/images/product-login-dark.png" alt="Sign in" width="900" />
 </p>
 
-It is not a chat interface that sends the same prompt to several models. The product is
-the orchestration decision: what to run, what *not* to run, in what order, and on which
-model.
-
-> **Status: Sprint 0 complete.** Specialised agents are selected by capability,
-> planned as a DAG, and executed with skips, retries, approval, and synthesis. They also
-> talk directly: durable inboxes, scoped memory, and artifact references. Several
-> providers share one routing layer with logged fallback. Cost is visible from the API
-> and from Prometheus.
->
-> Product shape: an **office of specialists** (brief once; watch desks, mail, and the
-> workflow graph) — inspired by multi-agent office harnesses, implemented as a web
-> orchestrator rather than a desktop CLI wrapper. See
-> [`docs/adr/0006-office-of-specialists.md`](docs/adr/0006-office-of-specialists.md).
->
-> Operator identity (`X-Operator-Id`) and workflow ownership shipped in Universal Office
-> Sprint 9; rate limits and soft budgets in Sprint 10; production fail-fast in Sprint 11;
-> HS256 JWT Bearer validation in Sprint 12; Playwright browser smoke (J-2) in Sprint 13 —
-> see ADRs
-> [0007](docs/adr/0007-operator-identity.md),
-> [0008](docs/adr/0008-rate-limits.md),
-> [0009](docs/adr/0009-production-fail-fast.md).
-
-## Run with Docker
-
-Needs Docker with Compose v2+. From the repo root:
+## Quick start (Docker)
 
 ```bash
 cp .env.example .env
+# Add provider keys and a JWT_SECRET in .env (see Deploy below)
 docker compose up --build
 ```
 
-That starts Postgres, Redis, the API, and the UI.
+| URL | Purpose |
+|-----|---------|
+| http://localhost:3000 | Product site |
+| http://localhost:3000/login | Sign in |
+| http://localhost:3000/office | Workspace |
+| http://localhost:8000/docs | API reference |
+| http://localhost:8000/healthz | Health check |
 
-| URL | What |
+Stop with `Ctrl+C`, or run detached: `docker compose up --build -d`.
+
+## Verified product scope (Sprint 0–2 MVP + polish)
+
+Aligned with [`docs/AUDIT_CHECKLIST_SPRINT0-2.md`](docs/AUDIT_CHECKLIST_SPRINT0-2.md):
+
+- Capability-based specialist selection and DAG planning
+- Parallel / sequential execution with retries, skip, approve/reject, cancel/resume
+- PostgreSQL-backed workflows; Redis for queues and rate limits
+- Provider routing (Gemini, Groq, OpenAI, Claude, OpenRouter, …) + Free Only
+- Workspace: Command, Build, Work, Messages, Agents, Settings
+- Continuous Command chat (history stays in one thread; Enter to send)
+- Clean markdown answers; downloadable files when the brief asks for a file
+- Product site: section scroll flow, section motion, React Bits ambient backgrounds
+- Google sign-in or local operator access for development
+- CI: lint, types, pytest, Docker, gitleaks, Playwright smoke
+
+## Configuration
+
+Copy `.env.example` to `.env`. Important variables:
+
+| Variable | Notes |
+|----------|--------|
+| `AUTH_MODE` | `header` for local operator + Google Bearer; `google` for Google sessions only |
+| `GOOGLE_CLIENT_ID` / `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Same OAuth Web client ID |
+| `JWT_SECRET` | Required to issue Google sessions; required in production |
+| `CORS_ALLOW_ORIGINS` | Your frontend origin(s), comma-separated |
+| `*_API_KEY` | Provider keys (Groq, Google, OpenAI, …) |
+| `ENVIRONMENT` | Use `production` when deploying |
+
+Never commit `.env`.
+
+## Deploy
+
+1. Set `ENVIRONMENT=production`
+2. Set a strong `JWT_SECRET` and `POSTGRES_PASSWORD`
+3. Set `ENCRYPTION_KEY` (Fernet key) for stored provider credentials
+4. Set `AUTH_MODE=google` (recommended) or `header` if you intentionally allow operator headers
+5. Configure Google OAuth authorized origins for your public URL
+6. Set `NEXT_PUBLIC_API_BASE_URL` and `CORS_ALLOW_ORIGINS` to your public API / site URLs
+7. Attach provider API keys or connect them in Settings after launch
+8. Run database migrations on first boot
+
+```bash
+docker compose up --build -d
+```
+
+Production URL (when live): see pending row in [`MISSING_SUBMISSION_FILES.md`](MISSING_SUBMISSION_FILES.md).
+
+## Docs & deliverables
+
+| Doc | Link |
 |-----|------|
-| http://localhost:3000 | Product site (story + agent visualization) |
-| http://localhost:3000/office | Workspace — run tasks with the agent roster |
-| http://localhost:8000/docs | API docs |
-| http://localhost:8000/healthz | Backend health |
+| Wiki | [GitHub Wiki](https://github.com/Soumen2581/Capstone-Project/wiki) |
+| Architecture | [`docs/architecture.md`](docs/architecture.md) |
+| ADRs | [`docs/adr/`](docs/adr/) |
+| Sprint 0–2 audit | [`docs/AUDIT_CHECKLIST_SPRINT0-2.md`](docs/AUDIT_CHECKLIST_SPRINT0-2.md) |
+| Missing / pending files (ready links) | [`MISSING_SUBMISSION_FILES.md`](MISSING_SUBMISSION_FILES.md) |
+| Technical paper (owner upload) | [`docs/paper/CS691_Technical_Paper.pdf`](docs/paper/CS691_Technical_Paper.pdf) |
 
-Optional provider keys (Claude, Kimi, OpenAI, Gemini, …) go in `.env` — see `.env.example`. Without keys, offline demo mode still works.
+Course remote is **read-only** reference only: https://github.com/htmw/F2026-T2-Phoenix
 
-Stop with `Ctrl+C`, or run detached with `docker compose up --build -d` and stop with `docker compose down`.
-
-Backend and frontend hot-reload from your working tree. The frontend mounts `app/`, `lib/`, `components/`, and `public/` (not the whole directory), so Next.js generated files stay in the container. `make help` lists other tasks.
-
-## Architecture at a glance
-
-```
-Frontend (Next.js)  ->  Backend (FastAPI)  ->  AI providers (external HTTP)
-                             |    |
-                      PostgreSQL  Redis
-                      (durable)   (queues, cache, locks)
-```
-
-The backend is a **modular monolith**: orchestrator, agent registry, workflow engine, and
-provider adapters are internal modules with enforced dependency direction, not separate
-services. PostgreSQL is the only source of truth; Redis holds work we can afford to lose
-and rebuild.
-
-Reasoning behind these choices lives in [`docs/adr/`](docs/adr/), and the full picture in
-[`docs/architecture.md`](docs/architecture.md).
-
-## Repository layout
-
-```
-backend/            FastAPI application
-  app/api/          HTTP layer: routes, middleware, dependencies
-  app/core/         config, logging, health checks
-  tests/            pytest suite
-frontend/           Next.js App Router application
-docs/
-  architecture.md   current architecture
-  adr/              architecture decision records
-  agile/            vision, backlog, sprint plan, Definition of Done, retrospectives
-docker-compose.yml  development stack
-Makefile            entry point for every check CI runs
-```
-
-## Local development without Docker
-
-Docker is the supported path, but the backend runs directly too:
+## Development
 
 ```bash
-make install                              # backend venv + frontend npm ci
-cd backend && .venv/bin/uvicorn app.main:app --reload
+make install    # backend venv + frontend deps
+make check      # lint, typecheck, tests
+make up         # full stack
 ```
 
-`DATABASE_URL` and `REDIS_URL` default to `localhost`, so a host-based backend needs
-Postgres and Redis reachable there — `docker compose up postgres redis` is enough.
+Frontend: Next.js App Router in `frontend/`  
+Backend: FastAPI modular monolith in `backend/`
 
-## Trying it
+## License
 
-With the stack running (`make up`), no API keys needed — a built-in fake provider stands
-in so the whole pipeline works offline:
-
-```bash
-# See which agents a request would activate, and the most it could cost
-curl -s -X POST http://localhost:8000/api/v1/tasks/plan \
-  -H 'Content-Type: application/json' \
-  -d '{"request":"Find security vulnerabilities in the payments service"}' | python3 -m json.tool
-
-# Run it: analyse, select agents, build a workflow, execute it
-curl -s -X POST http://localhost:8000/api/v1/tasks \
-  -H 'Content-Type: application/json' \
-  -d '{"request":"Analyze this repository for security vulnerabilities, fix the issues, write tests, and document the changes"}' | python3 -m json.tool
-```
-
-The narrow request activates one agent and records why the other six were excluded. The
-broad one builds a graph such as `planning → security → coding → testing → documentation`,
-excluding research and review as irrelevant. Open http://localhost:3000 to submit the
-same request and watch node status, skips, cost, and approval gates update live.
-
-Set `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `XAI_API_KEY`,
-`MISTRAL_API_KEY`, `OPENROUTER_API_KEY`) in `.env` to use a real provider instead of the
-fake.
-
-Other endpoints: `GET /api/v1/office`, `GET /api/v1/messages`, `POST /api/v1/messages`,
-`GET /api/v1/discovery`, `GET /api/v1/memory`, `GET /api/v1/artifacts`, `GET /api/v1/events`,
-`GET /api/v1/metrics`, `GET /api/v1/agents`, `GET /api/v1/capabilities`,
-`GET /api/v1/providers`, `GET /api/v1/workflows`, `GET /api/v1/workflows/{id}`,
-`POST /api/v1/agents/{id}/run`, `POST /api/v1/workflows/{id}/cancel`,
-`POST /api/v1/workflows/{id}/resume`,
-`POST /api/v1/workflows/{id}/nodes/{key}/approve|reject|retry|skip`,
-and interactive docs at `/docs` outside production. Mutating routes require operator
-identity (`X-Operator-Id` or Bearer); workflows are scoped to `owner_id`. Set
-`AUTH_MODE=off` only for local scripts that skip the header.
-
-Production images and the secrets-manager path: [`docs/operations/production.md`](docs/operations/production.md).
-Grafana: `docker compose --profile observability up` then http://localhost:3001.
-
-## Google sign-in
-
-`AUTH_MODE=google` replaces the browser-supplied operator id with a verified Google account.
-
-1. In Google Cloud Console, create an OAuth client of type **Web application**.
-2. Add authorized JavaScript origin `http://localhost:3000` (and the production origin).
-3. No redirect URI is required for the ID-token button. Do not put a client secret in the repo.
-4. Set `GOOGLE_CLIENT_ID` and `NEXT_PUBLIC_GOOGLE_CLIENT_ID` to that client id.
-5. Set `JWT_SECRET` so the API can issue its own session token after Google verifies the ID token.
-6. Set `AUTH_MODE=google`.
-
-The API checks the token signature, issuer (`https://accounts.google.com`), audience, expiry, and `email_verified`. The account key is Google's `sub`. A different Google account with the same email is rejected instead of linked. Logout increments a session version so the previous token stops working. Generated files and operator memories are readable only by that `sub`.
-
-## Quality gates
-
-```bash
-make check       # lint + typecheck + test, exactly what CI runs
-make test        # backend tests only
-make lint        # ruff + eslint
-make typecheck   # mypy (strict) + tsc
-make e2e-ci      # Playwright browser smoke (Demo Mode compose overlay)
-```
-
-Backend code is linted with `ruff`, type-checked with `mypy --strict`, and tested with
-`pytest`. Frontend uses ESLint and `tsc --noEmit`. CI (`.github/workflows/ci.yml`) runs on
-`master`, `main`, and `develop`. It lints and type-checks both apps, applies migrations
-to PostgreSQL, runs pytest (including auth isolation and file-generation tests), builds
-the Docker images, runs Playwright Chromium smoke against compose, and scans history for
-committed secrets. Workflow runs can also be started manually.
-
-## Configuration and secrets
-
-All configuration comes from environment variables, documented in
-[`.env.example`](.env.example). Copy it to `.env`; `.env` is git-ignored and CI fails if
-it is ever tracked.
-
-Provider API keys are read **by the backend only**. They are held as secret values that
-redact themselves in logs, reprs, and serialised output, and no key or key-derived value
-is ever sent to the frontend. Tests never make paid API calls. Production deployments are
-intended to source secrets from a secrets manager rather than a `.env` file.
-
-## Contributing
-
-Branches: `main` (releasable), `develop` (integration), and `feature/*`, `bugfix/*`,
-`refactor/*` for work. Commits follow Conventional Commits (`feat:`, `fix:`, `test:`,
-`docs:`, `chore:`).
-
-Before opening a pull request, run `make check` and walk the
-[Definition of Done](docs/agile/definition-of-done.md). Architectural changes need an ADR.
-
-## Troubleshooting
-
-**Backend exits immediately.** It waits for Postgres and Redis health checks; inspect
-`docker compose logs backend`. A validation error at startup means a bad value in `.env`
-— configuration fails fast on purpose.
-
-**`/readyz` returns 503.** One dependency is unreachable; the response body names which
-one and why. Liveness stays 200 in this state by design, since the process itself is fine.
-
-**Port already in use.** Override `BACKEND_PORT`, `FRONTEND_PORT`, `POSTGRES_PORT`, or
-`REDIS_PORT` in `.env`.
-
-**Frontend shows "unreachable".** The backend container is still starting or failed;
-check `docker compose ps` and the backend logs.
-
-**Stale dependencies after a pull.** `docker compose up --build`. To reset local data
-entirely, `make clean`.
-
-**Frontend edits to a new directory are not picked up.** Only `app/`, `lib/`, `components/`, and
-`public/` are mounted. This is deliberate: Next.js takes a file lock on `next-env.d.ts`,
-and file locking is unsupported on macOS bind mounts, so mounting the whole directory
-kills the dev server with `EDEADLK` (reported as `Unknown system error -35`). Add the new
-directory to the `frontend` service's `volumes` in `docker-compose.yml`.
-
-### Windows Note
-
-On Windows, make sure Docker Desktop is running before starting the project with:
-
-```bash
-docker compose up --build
-```
+Proprietary — all rights reserved unless otherwise noted.

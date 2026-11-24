@@ -1,68 +1,96 @@
 "use client";
 
 import Link from "next/link";
-import { motion, useReducedMotion } from "framer-motion";
 
 import { AgentNetwork } from "@/components/marketing/AgentNetwork";
+import FadeContent from "@/components/react-bits/FadeContent";
+import AnimatedContent from "@/components/visuals/interactions/AnimatedContent";
+import { AmbientBackground } from "@/components/visuals/backgrounds/AmbientBackground";
+import { BrandGradientText } from "@/components/visuals/text/BrandGradientText";
+import { BRAND_NAME, BRAND_TAGLINE } from "@/lib/brand";
+import { useWorkspaceAuthed } from "@/lib/useWorkspaceAuth";
 
 export function HeroSection() {
-  const reduce = useReducedMotion();
+  const authed = useWorkspaceAuthed();
 
   return (
     <section className="mkt-hero" id="top">
-      <div className="mkt-grid">
+      <AmbientBackground variant="threads" className="mkt-hero-ambient" />
+      <div className="mkt-hero-atmosphere" aria-hidden />
+
+      <div className="mkt-hero-stage">
         <div className="mkt-hero-copy">
-          <motion.p
-            className="mkt-eyebrow"
-            initial={reduce ? false : { opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
+          <FadeContent trigger="mount" effect="fade" blur={false} duration={0.9} delay={0.05}>
+            <h1 className="mkt-brand-hero">
+              <BrandGradientText>{BRAND_NAME}</BrandGradientText>
+            </h1>
+          </FadeContent>
+
+          <AnimatedContent
+            trigger="mount"
+            direction="vertical"
+            distance={28}
+            duration={0.85}
+            delay={0.18}
+            blur={0}
           >
-            Agent Mesh
-          </motion.p>
-          <motion.h1
-            className="mkt-display"
-            initial={reduce ? false : { opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, delay: 0.05 }}
+            <p className="mkt-display">Specialist agents. One accountable result.</p>
+          </AnimatedContent>
+
+          <AnimatedContent
+            trigger="mount"
+            direction="vertical"
+            distance={22}
+            duration={0.8}
+            delay={0.32}
+            blur={0}
           >
-            AI agents.
-            <br />
-            Working together.
-          </motion.h1>
-          <motion.p
-            className="mkt-lede"
-            initial={reduce ? false : { opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.12 }}
+            <p className="mkt-lede">{BRAND_TAGLINE}</p>
+          </AnimatedContent>
+
+          <AnimatedContent
+            trigger="mount"
+            direction="vertical"
+            distance={18}
+            duration={0.75}
+            delay={0.46}
+            blur={0}
           >
-            A collaborative AI workspace where a team of specialists is assembled for your brief:
-            market research, a product plan, analysis, code, and more, working together as one
-            organization.
-          </motion.p>
-          <motion.div
-            className="mkt-hero-cta"
-            initial={reduce ? false : { opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45, delay: 0.18 }}
-          >
-            <Link href="/office" className="mkt-btn mkt-btn-primary mkt-btn-lg">
-              Start a task
-            </Link>
-            <a href="#agents" className="mkt-btn mkt-btn-ghost mkt-btn-lg">
-              Explore agents
-            </a>
-          </motion.div>
+            <div className="mkt-hero-cta">
+              {authed ? (
+                <Link href="/office" className="mkt-btn mkt-btn-primary mkt-btn-lg">
+                  Open workspace
+                </Link>
+              ) : (
+                <>
+                  <Link href="/signup" className="mkt-btn mkt-btn-primary mkt-btn-lg">
+                    Sign up
+                  </Link>
+                  <Link href="/login" className="mkt-btn mkt-btn-ghost mkt-btn-lg">
+                    Log in
+                  </Link>
+                </>
+              )}
+            </div>
+          </AnimatedContent>
         </div>
-        <motion.div
+
+        <FadeContent
+          trigger="mount"
+          effect="fade"
+          blur={false}
+          duration={1.1}
+          delay={0.28}
           className="mkt-hero-visual"
-          initial={reduce ? false : { opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.7, delay: 0.15 }}
         >
-          <AgentNetwork />
-        </motion.div>
+          <AgentNetwork className="mkt-hero-network" />
+        </FadeContent>
       </div>
+
+      <a href="#idea" className="mkt-scroll-cue" aria-label="Scroll to next section">
+        <span className="mkt-scroll-cue-line" aria-hidden />
+        <span>Scroll</span>
+      </a>
     </section>
   );
 }

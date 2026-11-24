@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent } from "react";
+import { FormEvent, KeyboardEvent, useRef } from "react";
 
 import type { AgentSummary, RoutingStrategy } from "@/lib/types";
 
@@ -70,15 +70,27 @@ export function TaskComposer({
   compact?: boolean;
 }) {
   const roster = pickAgents ? selectedAgents : agents.map((agent) => agent.id);
+  const formRef = useRef<HTMLFormElement>(null);
+  const canSubmit =
+    !busy && request.trim().length >= 3 && !noModels && !freeOnlyBlocked;
+
+  const onBriefKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
+      return;
+    }
+    event.preventDefault();
+    if (canSubmit) {
+      formRef.current?.requestSubmit();
+    }
+  };
 
   return (
     <section className={`panel composer-hero ${compact ? "composer-compact" : ""}`}>
       {!compact && (
         <>
-          <h2>What should the office take on?</h2>
+          <h2 className="composer-title">Command</h2>
           <p className="muted" style={{ margin: 0 }}>
-            One brief in, specialists plan across Claude, Kimi, ChatGPT, Gemini, Grok, and more
-            {offlineDemo ? " (offline demo)." : "."}
+            {`Describe the outcome you need. Agent Mesh selects specialists, routes models, and returns one synthesized result${offlineDemo ? " (offline simulation until a provider is connected)." : "."}`}
           </p>
         </>
       )}
@@ -99,13 +111,18 @@ export function TaskComposer({
 
       {offlineDemo && !noModels && (
         <p className="banner warn">
-          Offline demo, responses are simulated. Connect a provider in Settings for live models.
+          Offline simulation is active. Connect a provider in Settings for live models.
         </p>
       )}
 
       {freeOnlyBlocked && <p className="banner warn">{freeOnlyBlocked}</p>}
 
-      <form onSubmit={onSubmit} className="task-form" data-testid="command-form">
+      <form
+        ref={formRef}
+        onSubmit={onSubmit}
+        className="task-form"
+        data-testid="command-form"
+      >
         <label className="field">
           <span className="visually-hidden">Brief</span>
           <textarea
@@ -113,6 +130,7 @@ export function TaskComposer({
             data-testid="request-input"
             value={request}
             onChange={(event) => onRequest(event.target.value)}
+            onKeyDown={onBriefKeyDown}
             rows={compact ? 2 : 4}
             required
             minLength={3}
@@ -148,7 +166,7 @@ export function TaskComposer({
             type="submit"
             className="px-btn primary"
             data-testid="assign-work"
-            disabled={busy || request.trim().length < 3 || noModels || !!freeOnlyBlocked}
+            disabled={!canSubmit}
           >
             {busy ? "Starting…" : compact ? "Send" : "Start task"}
           </button>

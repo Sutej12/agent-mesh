@@ -55,6 +55,18 @@ async function main() {
   const client = await CDP({ port: PORT });
   const { Page, Runtime, Emulation, Network } = client;
   await Promise.all([Page.enable(), Runtime.enable(), Network.enable()]);
+  await Page.addScriptToEvaluateOnNewDocument({
+    source: `(() => {
+      try {
+        localStorage.setItem('agent-mesh-theme', 'dark');
+        localStorage.setItem('agent-mesh-workspace-auth', '1');
+        localStorage.setItem('agentorch.operatorId', 'operator');
+        document.documentElement.dataset.theme = 'dark';
+        document.documentElement.dataset.themePreference = 'dark';
+        document.documentElement.style.colorScheme = 'dark';
+      } catch (e) {}
+    })()`,
+  });
   await Emulation.setDeviceMetricsOverride({
     width: 1440,
     height: 920,
@@ -77,10 +89,12 @@ async function main() {
           document.head.appendChild(s);
         }
         try {
-          localStorage.setItem('agent-mesh-theme', 'light');
-          document.documentElement.dataset.theme = 'light';
-          document.documentElement.dataset.themePreference = 'light';
-          document.documentElement.style.colorScheme = 'light';
+          localStorage.setItem('agent-mesh-theme', 'dark');
+          localStorage.setItem('agent-mesh-workspace-auth', '1');
+          localStorage.setItem('agentorch.operatorId', 'operator');
+          document.documentElement.dataset.theme = 'dark';
+          document.documentElement.dataset.themePreference = 'dark';
+          document.documentElement.style.colorScheme = 'dark';
         } catch (e) {}
         return true;
       })()`,
@@ -107,9 +121,8 @@ async function main() {
 
   async function shotClip(file, clip) {
     const { data } = await Page.captureScreenshot({
-      format: "jpeg",
-      quality: 92,
-      clip: { ...clip, scale: 1 },
+      format: "png",
+        clip: { ...clip, scale: 1 },
       captureBeyondViewport: true,
       fromSurface: true,
     });
@@ -157,12 +170,11 @@ async function main() {
   // Marketing
   await goto("http://localhost:3000/");
   await setNavVisible(true);
-  await shotClip("01-hero-light.jpg", await heroClip());
+  await shotClip("product-hero-dark.png", await heroClip());
   for (const [sel, file] of [
-    ["#agents", "02-agents-roster.jpg"],
-    ["#how-it-works", "03-workflow-steps.jpg"],
-    ["#communication", "04-agent-mesh.jpg"],
-    ["#workspace", "05-one-workspace.jpg"],
+    ["#agents", "product-agents-dark.png"],
+    ["#communication", "product-mesh-dark.png"],
+    ["#workspace", "product-workspace-dark.png"],
   ]) {
     await goto("http://localhost:3000/");
     await setNavVisible(false);
@@ -179,12 +191,11 @@ async function main() {
   await Runtime.evaluate({ expression: "window.scrollTo(0,0)" });
   await sleep(400);
   const { data: officeData } = await Page.captureScreenshot({
-    format: "jpeg",
-    quality: 92,
+    format: "png",
     fromSurface: true,
   });
-  fs.writeFileSync(path.join(OUT, "06-office-home.jpg"), Buffer.from(officeData, "base64"));
-  console.log("ok 06-office-home.jpg");
+  fs.writeFileSync(path.join(OUT, "product-command-dark.png"), Buffer.from(officeData, "base64"));
+  console.log("ok 06-office-home.png");
 
   // Settings — taller viewport so provider grid isn't clipped mid-row
   await Emulation.setDeviceMetricsOverride({
@@ -205,12 +216,36 @@ async function main() {
   await hideOverlays();
   await Runtime.evaluate({ expression: "window.scrollTo(0,0)" });
   const { data: settingsData } = await Page.captureScreenshot({
-    format: "jpeg",
-    quality: 92,
+    format: "png",
     fromSurface: true,
   });
-  fs.writeFileSync(path.join(OUT, "07-settings-providers.jpg"), Buffer.from(settingsData, "base64"));
-  console.log("ok 07-settings-providers.jpg");
+  fs.writeFileSync(path.join(OUT, "product-settings-dark.png"), Buffer.from(settingsData, "base64"));
+  console.log("ok 07-settings-providers.png");
+
+  // Login (no workspace auth) — dark card on dark ground
+  await Emulation.setDeviceMetricsOverride({
+    width: 1440,
+    height: 920,
+    deviceScaleFactor: 2,
+    mobile: false,
+  });
+  await Runtime.evaluate({
+    expression: `(() => {
+      try {
+        localStorage.removeItem('agent-mesh-workspace-auth');
+        localStorage.setItem('agent-mesh-theme', 'dark');
+      } catch (e) {}
+      return true;
+    })()`,
+  });
+  await goto("http://localhost:3000/login");
+  await sleep(500);
+  const { data: loginData } = await Page.captureScreenshot({
+    format: "png",
+    fromSurface: true,
+  });
+  fs.writeFileSync(path.join(OUT, "product-login-dark.png"), Buffer.from(loginData, "base64"));
+  console.log("ok 08-login.png");
 
   await client.close();
   chrome.kill("SIGKILL");

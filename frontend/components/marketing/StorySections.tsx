@@ -1,27 +1,13 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { motion, useReducedMotion } from "framer-motion";
-
 import { OFFICE_AGENTS } from "@/lib/design/agents";
-
-function Reveal({ children, delay = 0 }: { children: ReactNode; delay?: number }) {
-  const reduce = useReducedMotion();
-  return (
-    <motion.div
-      initial={reduce ? false : { opacity: 0, y: 24 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-10%" }}
-      transition={{ duration: 0.55, delay, ease: [0.22, 1, 0.36, 1] }}
-    >
-      {children}
-    </motion.div>
-  );
-}
+import { SectionAmbient } from "@/components/marketing/SectionAmbient";
+import { SectionReveal as Reveal } from "@/components/marketing/SectionReveal";
 
 export function IdeaSection() {
   return (
     <section className="mkt-section" id="idea">
+      <SectionAmbient variant="dots" />
       <div className="mkt-grid mkt-section-narrow">
         <Reveal>
           <p className="mkt-kicker">01 · The idea</p>
@@ -44,6 +30,7 @@ export function IdeaSection() {
 export function AgentsSection() {
   return (
     <section className="mkt-section mkt-section-muted" id="agents">
+      <SectionAmbient variant="veil" />
       <div className="mkt-grid">
         <Reveal>
           <p className="mkt-kicker">02 · The agents</p>

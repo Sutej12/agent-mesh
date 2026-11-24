@@ -1,32 +1,47 @@
 "use client";
 
 import Link from "next/link";
-import { motion, useReducedMotion } from "framer-motion";
+
+import { SectionAmbient } from "@/components/marketing/SectionAmbient";
+import { SectionReveal } from "@/components/marketing/SectionReveal";
+import { useWorkspaceAuthed } from "@/lib/useWorkspaceAuth";
 
 export function FinalCTA() {
-  const reduce = useReducedMotion();
+  const authed = useWorkspaceAuthed();
+
   return (
     <section className="mkt-section mkt-cta">
+      <SectionAmbient variant="veil" />
       <div className="mkt-grid mkt-section-narrow">
-        <motion.div
-          initial={reduce ? false : { opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.55 }}
-        >
+        <SectionReveal>
           <p className="mkt-kicker">08 · Begin</p>
           <h2 className="mkt-title">Give your AI team a task.</h2>
           <p className="mkt-body">Open the office, describe the brief, and watch specialists collaborate.</p>
-          <Link href="/office" className="mkt-btn mkt-btn-primary mkt-btn-lg">
-            Start a task
-          </Link>
-        </motion.div>
+          <div className="mkt-hero-cta">
+            {authed ? (
+              <Link href="/office" className="mkt-btn mkt-btn-primary mkt-btn-lg">
+                Open workspace
+              </Link>
+            ) : (
+              <>
+                <Link href="/signup" className="mkt-btn mkt-btn-primary mkt-btn-lg">
+                  Sign up
+                </Link>
+                <Link href="/login" className="mkt-btn mkt-btn-ghost mkt-btn-lg">
+                  Log in
+                </Link>
+              </>
+            )}
+          </div>
+        </SectionReveal>
       </div>
     </section>
   );
 }
 
 export function MarketingFooter() {
+  const authed = useWorkspaceAuthed();
+
   return (
     <footer className="mkt-footer">
       <div className="mkt-grid mkt-footer-inner">
@@ -37,7 +52,14 @@ export function MarketingFooter() {
         <nav aria-label="Footer">
           <a href="#agents">Agents</a>
           <a href="#how-it-works">How it works</a>
-          <Link href="/office">Workspace</Link>
+          {authed ? (
+            <Link href="/office">Open workspace</Link>
+          ) : (
+            <>
+              <Link href="/login">Log in</Link>
+              <Link href="/signup">Sign up</Link>
+            </>
+          )}
         </nav>
       </div>
     </footer>
