@@ -36,6 +36,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+def _require_legacy_auth(settings: Settings) -> None:
+    if settings.auth_mode == "supabase":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="authentication is managed by Supabase",
+        )
+
+
 def _normalise_email(value: str) -> str:
     cleaned = value.strip().lower()
     if not _EMAIL_RE.fullmatch(cleaned) or len(cleaned) > 320:
@@ -152,6 +160,7 @@ async def login_with_google(
     settings: SettingsDep,
     session: SessionDep,
 ) -> LoginResponse:
+    _require_legacy_auth(settings)
     client_id = settings.google_client_id or ""
     test_key = getattr(request.app.state, "google_token_key", None)
     if test_key is not None and settings.environment in {"test", "development"}:
@@ -199,6 +208,7 @@ async def register_with_password(
     session: SessionDep,
 ) -> LoginResponse:
     """Create a durable email/password account and issue a session."""
+    _require_legacy_auth(settings)
     existing = await session.scalar(
         select(UserRecord).where(func.lower(UserRecord.email) == body.email)
     )
@@ -233,6 +243,7 @@ async def login_with_password(
     session: SessionDep,
 ) -> LoginResponse:
     """Authenticate an email/password account and issue a session."""
+    _require_legacy_auth(settings)
     user = await session.scalar(
         select(UserRecord).where(func.lower(UserRecord.email) == body.email)
     )
@@ -253,6 +264,51 @@ async def login_with_password(
 @router.get("/me", response_model=UserView)
 async def current_user(operator: OperatorDep, session: SessionDep) -> UserView:
     user = await session.get(UserRecord, operator.id)
+    if user is None and operator.source == "supabase":
+        if not operator.email:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Supabase account does not expose an email address",
+            )
+        existing_email = await session.scalar(
+            select(UserRecord).where(func.lower(UserRecord.email) == operator.email.lower())
+        )
+        if existing_email is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="this email belongs to an existing Agent Mesh identity",
+            )
+        user = UserRecord(
+            google_sub=operator.id,
+            email=operator.email,
+            email_verified=True,
+            display_name=operator.display_name,
+            picture_url=operator.picture_url,
+            password_hash=None,
+            session_version=1,
+            last_login_at=datetime.now(UTC),
+        )
+        session.add(user)
+        await session.flush()
+    elif user is not None and operator.source == "supabase":
+        if operator.email:
+            email_owner = await session.scalar(
+                select(UserRecord).where(
+                    func.lower(UserRecord.email) == operator.email.lower(),
+                    UserRecord.google_sub != operator.id,
+                )
+            )
+            if email_owner is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="this email belongs to an existing Agent Mesh identity",
+                )
+            user.email = operator.email
+            user.email_verified = True
+        user.display_name = operator.display_name or user.display_name
+        user.picture_url = operator.picture_url or user.picture_url
+        user.last_login_at = datetime.now(UTC)
+        await session.flush()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="sign in required")
     return _view(user)
@@ -261,7 +317,7 @@ async def current_user(operator: OperatorDep, session: SessionDep) -> UserView:
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(operator: OperatorDep, session: SessionDep, response: Response) -> Response:
     user = await session.get(UserRecord, operator.id)
-    if user is not None:
+    if user is not None and operator.source != "supabase":
         user.session_version += 1
         await session.flush()
     response.delete_cookie(SESSION_COOKIE, path="/")
@@ -274,6 +330,11 @@ async def delete_account(
     operator: OperatorDep, settings: SettingsDep, session: SessionDep, response: Response
 ) -> Response:
     """Delete the account, its memories, and its generated files."""
+    if operator.source == "supabase":
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Supabase account deletion is not configured",
+        )
     artifacts = (
         await session.scalars(select(ArtifactRecord).where(ArtifactRecord.owner_id == operator.id))
     ).all()

@@ -11,6 +11,10 @@ import {
   setOperatorId,
 } from "@/lib/api";
 import { BRAND_NAME } from "@/lib/brand";
+import { requireSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSiteUrl, isSupabaseConfigured } from "@/lib/supabase/config";
+
+const SUPABASE_AUTH = isSupabaseConfigured();
 
 export default function SignupPage() {
   const router = useRouter();
@@ -20,6 +24,23 @@ export default function SignupPage() {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const startGoogleSignup = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { error: authError } = await requireSupabaseBrowserClient().auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${getSiteUrl()}/auth/callback?next=/office` },
+      });
+      if (authError) {
+        throw authError;
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Google sign-up failed");
+      setBusy(false);
+    }
+  };
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -55,10 +76,23 @@ export default function SignupPage() {
         <BrandLogo size={48} variant="mark" />
         <h1>Create your account</h1>
         <p className="login-tagline">
-          Register for {BRAND_NAME}. Your details are stored so you can sign back in.
+          {SUPABASE_AUTH
+            ? `Continue with Google to create your ${BRAND_NAME} workspace.`
+            : `Register for ${BRAND_NAME}. Your details are stored so you can sign back in.`}
         </p>
 
-        <form onSubmit={onSubmit} className="stack-gap">
+        {SUPABASE_AUTH ? (
+          <button
+            type="button"
+            className="px-btn primary"
+            disabled={busy}
+            data-testid="google-signup"
+            onClick={() => void startGoogleSignup()}
+          >
+            {busy ? "Opening Google…" : "Continue with Google"}
+          </button>
+        ) : (
+          <form onSubmit={onSubmit} className="stack-gap">
           <label className="field">
             <span>Display name</span>
             <input
@@ -119,7 +153,8 @@ export default function SignupPage() {
           <button type="submit" className="px-btn primary" disabled={busy} data-testid="signup-submit">
             {busy ? "Creating account…" : "Create account"}
           </button>
-        </form>
+          </form>
+        )}
 
         <p className="meta" style={{ marginTop: 16 }}>
           Already registered? <Link href="/login">Log in</Link>

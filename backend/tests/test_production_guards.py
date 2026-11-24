@@ -21,6 +21,9 @@ def _prod(**overrides: object) -> Settings:
         "seed_agents_on_startup": False,
         "encryption_key": "prod-encryption-key-for-tests",
         "jwt_secret": "prod-jwt-secret-for-tests",
+        # Keep these settings hermetic when the developer's Compose environment has
+        # Supabase configured. Tests that exercise Supabase auth opt in explicitly.
+        "supabase_url": None,
         "cors_allow_origins": ["https://office.example"],
         "allowed_hosts": ["office.example", "api.office.example"],
         "log_format": "json",
@@ -36,6 +39,20 @@ def test_production_accepts_hardened_settings() -> None:
     assert settings.seed_agents_on_startup is False
 
 
+def test_production_supabase_auth_does_not_require_legacy_jwt_secret() -> None:
+    settings = _prod(
+        auth_mode="supabase",
+        supabase_url="https://project.supabase.co",
+        database_ssl_mode="require",
+        jwt_secret=None,
+    )
+    assert settings.effective_supabase_issuer == "https://project.supabase.co/auth/v1"
+    assert (
+        settings.effective_supabase_jwks_url
+        == "https://project.supabase.co/auth/v1/.well-known/jwks.json"
+    )
+
+
 @pytest.mark.parametrize(
     ("overrides", "needle"),
     [
@@ -46,6 +63,25 @@ def test_production_accepts_hardened_settings() -> None:
         ({"encryption_key": "   "}, "ENCRYPTION_KEY"),
         ({"jwt_secret": None}, "JWT_SECRET"),
         ({"jwt_secret": "   "}, "JWT_SECRET"),
+        ({"auth_mode": "supabase", "jwt_secret": None}, "SUPABASE_URL"),
+        (
+            {
+                "auth_mode": "supabase",
+                "jwt_secret": None,
+                "supabase_url": "http://project.supabase.co",
+                "database_ssl_mode": "require",
+            },
+            "must use HTTPS",
+        ),
+        (
+            {
+                "auth_mode": "supabase",
+                "jwt_secret": None,
+                "supabase_url": "https://project.supabase.co",
+                "database_ssl_mode": "disable",
+            },
+            "DATABASE_SSL_MODE",
+        ),
         ({"cors_allow_origins": []}, "CORS_ALLOW_ORIGINS must list"),
         ({"cors_allow_origins": ["*"]}, "must not include '*'"),
         ({"allowed_hosts": []}, "ALLOWED_HOSTS must list"),

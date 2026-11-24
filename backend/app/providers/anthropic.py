@@ -23,6 +23,7 @@ from app.providers.base import (
     ProviderConfigurationError,
     ProviderError,
     estimate_tokens,
+    parse_retry_after_seconds,
 )
 from app.schemas.execution import TokenUsage
 
@@ -222,6 +223,7 @@ class AnthropicProvider(LLMProvider):
     def _map_error(self, response: httpx.Response) -> ProviderError:
         status = response.status_code
         detail, error_type = self._error_detail(response)
+        retry_after_seconds = parse_retry_after_seconds(response.headers.get("Retry-After"))
         match status:
             case 401 | 403:
                 kind = ErrorKind.AUTHENTICATION
@@ -243,20 +245,35 @@ class AnthropicProvider(LLMProvider):
                 kind = ErrorKind.PROVIDER_UNAVAILABLE
             case _:
                 kind = ErrorKind.UNKNOWN
+        if status == 429 and detail.upper().startswith("HTTP 429"):
+            detail = "rate limit or quota reached (HTTP 429). " + (
+                f"Retry after {retry_after_seconds:g} seconds."
+                if retry_after_seconds is not None
+                else "Wait before retrying; if this persists, check provider usage, "
+                "rate limits, and billing."
+            )
         logger.warning(
             "provider_request_failed",
             provider=self.name,
             status_code=status,
             error_kind=kind.value,
+            retry_after_seconds=retry_after_seconds,
         )
-        return ProviderError(kind, f"{self.name}: {detail}", provider=self.name, status_code=status)
+        return ProviderError(
+            kind,
+            f"{self.name}: {detail}",
+            provider=self.name,
+            status_code=status,
+            retry_after_seconds=retry_after_seconds,
+        )
 
     @staticmethod
     def _error_detail(response: httpx.Response) -> tuple[str, str]:
         try:
             body = response.json()
         except ValueError:
-            return (response.text[:200] or f"HTTP {response.status_code}", "")
+            text = response.text[:200].strip()
+            return (text or f"HTTP {response.status_code}", "")
         if isinstance(body, dict):
             error = body.get("error")
             if isinstance(error, dict):

@@ -11,7 +11,20 @@ test.describe("Agent Mesh smoke (J-2)", () => {
     await expect(page.getByLabel("Agent Mesh marketing site")).toBeVisible();
     await expect(page.getByTestId("brand")).toHaveText("Command");
     await expect(page.getByTestId("office-tabs")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
     await expect(page.getByTestId("command-form")).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("persistent logout returns to sign in", async ({ page }) => {
+    await page.goto("/office");
+    const logout = page.getByRole("button", { name: "Log out" });
+    await expect(logout).toBeVisible();
+
+    await logout.click();
+    await expect(page).toHaveURL(/\/login$/);
+    expect(
+      await page.evaluate(() => window.localStorage.getItem("agent-mesh-workspace-auth")),
+    ).toBeNull();
   });
 
   test("submit brief reaches a terminal workflow status via Demo Mode", async ({ page }) => {

@@ -22,7 +22,7 @@ OPERATOR_ID_HEADER = "X-Operator-Id"
 SESSION_COOKIE = "agent_mesh_session"
 _OPERATOR_ID_RE = re.compile(r"^[A-Za-z0-9_.:@-]{1,64}$")
 
-IdentitySource = Literal["header", "jwt", "dev_default"]
+IdentitySource = Literal["header", "jwt", "supabase", "dev_default"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +33,7 @@ class OperatorIdentity:
     source: IdentitySource
     email: str | None = None
     display_name: str | None = None
+    picture_url: str | None = None
 
 
 def validate_operator_id(value: str) -> str:

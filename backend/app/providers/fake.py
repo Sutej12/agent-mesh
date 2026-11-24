@@ -98,8 +98,16 @@ class FakeProvider(LLMProvider):
         message: str = "scripted failure",
         *,
         model_id: str | None = None,
+        status_code: int | None = None,
+        retry_after_seconds: float | None = None,
     ) -> None:
-        error = ProviderError(kind, message, provider=self.name)
+        error = ProviderError(
+            kind,
+            message,
+            provider=self.name,
+            status_code=status_code,
+            retry_after_seconds=retry_after_seconds,
+        )
         if model_id is None:
             self._global_queue.append(error)
         else:

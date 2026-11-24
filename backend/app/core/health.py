@@ -5,19 +5,21 @@ PostgreSQL and Redis are reachable. Each check is bounded by a short timeout: a 
 that hangs is worse than a probe that reports failure, because an orchestrator cannot
 act on a pending answer.
 
-These checks open a connection per call rather than using a pool. That is deliberate for
-Sprint 0 -- there is no pool yet -- and the readiness endpoint is the one place where
-verifying that connecting works from scratch is exactly the point. Sprint 1 will switch
-the PostgreSQL check to the shared SQLAlchemy engine.
+The application readiness route supplies its shared SQLAlchemy engine so PostgreSQL
+checks reuse the configured pool and TLS settings. The URL-only fallback is retained for
+small unit tests and standalone diagnostics.
 """
 
 from __future__ import annotations
 
 import asyncio
+import ssl
 from dataclasses import dataclass
 
 import asyncpg
 import redis.asyncio as aioredis
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.logging import get_logger
 
@@ -72,9 +74,19 @@ async def _timed(name: str, coro: object) -> DependencyStatus:
     )
 
 
-async def check_postgres(database_url: str) -> DependencyStatus:
+async def check_postgres(
+    database_url: str,
+    *,
+    engine: AsyncEngine | None = None,
+    ssl_context: ssl.SSLContext | None = None,
+) -> DependencyStatus:
     async def _probe() -> None:
-        connection = await asyncpg.connect(to_asyncpg_dsn(database_url))
+        if engine is not None:
+            async with engine.connect() as connection:
+                await connection.execute(text("SELECT 1"))
+            return
+
+        connection = await asyncpg.connect(to_asyncpg_dsn(database_url), ssl=ssl_context)
         try:
             await connection.execute("SELECT 1")
         finally:

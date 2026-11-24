@@ -4,8 +4,10 @@ Specialist AI agents, coordinated for real work.
 
 Submit one brief. Agent Mesh selects the right specialists, builds a workflow, routes each step to a model provider, and returns a single synthesized result.
 
-**Personal repository:** https://github.com/Soumen2581/Capstone-Project  
-**Wiki:** https://github.com/Soumen2581/Capstone-Project/wiki  
+**Repository:** https://github.com/Sutej12/agent-mesh
+
+**Wiki:** https://github.com/Sutej12/agent-mesh/wiki
+
 **Pending uploads:** [`MISSING_SUBMISSION_FILES.md`](MISSING_SUBMISSION_FILES.md)  
 **Audit checklist (Sprint 0–2):** [`docs/AUDIT_CHECKLIST_SPRINT0-2.md`](docs/AUDIT_CHECKLIST_SPRINT0-2.md)
 
@@ -13,7 +15,10 @@ Submit one brief. Agent Mesh selects the right specialists, builds a workflow, r
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Sutej12/agent-mesh)
 
-One click provisions everything from [`render.yaml`](render.yaml): PostgreSQL, Redis (Key Value), the FastAPI backend, and the Next.js frontend. The app boots in **demo mode** (simulated AI) with no configuration. For live AI, set `OPENAI_API_KEY` on the `agent-mesh-api` service and redeploy. Details: [docs/operations/render.md](docs/operations/render.md).
+The Blueprint provisions Redis (Key Value), the FastAPI backend, and the Next.js
+frontend; Supabase supplies PostgreSQL and Google authentication. Render prompts for the
+Supabase connection/project values. The app can still use its simulated AI provider until
+you add a live provider key. Details: [docs/operations/render.md](docs/operations/render.md).
 
 ## Screenshots
 
@@ -49,7 +54,8 @@ One click provisions everything from [`render.yaml`](render.yaml): PostgreSQL, R
 
 ```bash
 cp .env.example .env
-# Add provider keys and a JWT_SECRET in .env (see Deploy below)
+# Add the Supabase project, publishable key, and database connection values to .env.
+# Normal Compose uses Supabase for durable state; it does not start local PostgreSQL.
 docker compose up --build
 ```
 
@@ -84,9 +90,13 @@ Copy `.env.example` to `.env`. Important variables:
 
 | Variable | Notes |
 |----------|--------|
-| `AUTH_MODE` | `header` for local operator + Google Bearer; `google` for Google sessions only |
-| `GOOGLE_CLIENT_ID` / `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Same OAuth Web client ID |
-| `JWT_SECRET` | Required to issue Google sessions; required in production |
+| `AUTH_MODE` | `header` for local development; `supabase` for production Supabase Auth |
+| `DATABASE_URL` / `COMPOSE_DATABASE_URL` | Host/container Supabase PostgreSQL URL; use Direct or Session Pooler as appropriate |
+| `DATABASE_SSL_MODE` | `disable` locally; `require` or preferably `verify-full` for Supabase |
+| `SUPABASE_URL` | Backend Supabase project URL used to derive JWT issuer/JWKS |
+| `NEXT_PUBLIC_SUPABASE_URL` | Browser-visible Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser-safe Supabase publishable key; never use a secret/service-role key |
+| `NEXT_PUBLIC_SITE_URL` | Canonical frontend origin used for the OAuth callback |
 | `CORS_ALLOW_ORIGINS` | Your frontend origin(s), comma-separated |
 | `*_API_KEY` | Provider keys (Groq, Google, OpenAI, …) |
 | `ENVIRONMENT` | Use `production` when deploying |
@@ -95,14 +105,15 @@ Never commit `.env`.
 
 ## Deploy
 
-1. Set `ENVIRONMENT=production`
-2. Set a strong `JWT_SECRET` and `POSTGRES_PASSWORD`
-3. Set `ENCRYPTION_KEY` (Fernet key) for stored provider credentials
-4. Set `AUTH_MODE=google` (recommended) or `header` if you intentionally allow operator headers
-5. Configure Google OAuth authorized origins for your public URL
-6. Set `NEXT_PUBLIC_API_BASE_URL` and `CORS_ALLOW_ORIGINS` to your public API / site URLs
-7. Attach provider API keys or connect them in Settings after launch
-8. Run database migrations on first boot
+1. Create a Supabase project and enable Google under Authentication providers.
+2. Set `ENVIRONMENT=production`, a stable `ENCRYPTION_KEY`, and `AUTH_MODE=supabase`.
+3. Configure `DATABASE_URL` with the Supabase Direct/Session Pooler URL and require TLS.
+4. Configure `SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, and the publishable key.
+5. Add `/auth/callback` for the local and production sites to Supabase's redirect allow-list.
+6. In Google Cloud, point the OAuth redirect URI at Supabase's `/auth/v1/callback` URL.
+7. Set `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_SITE_URL`, and `CORS_ALLOW_ORIGINS`.
+8. Run `alembic upgrade head` once before starting API replicas, then seed agents once.
+9. Attach provider API keys or connect them in Settings after launch.
 
 ```bash
 docker compose up --build -d
@@ -114,7 +125,7 @@ Production URL (when live): see pending row in [`MISSING_SUBMISSION_FILES.md`](M
 
 | Doc | Link |
 |-----|------|
-| Wiki | [GitHub Wiki](https://github.com/Soumen2581/Capstone-Project/wiki) |
+| Wiki | [GitHub Wiki](https://github.com/Sutej12/agent-mesh/wiki) |
 | Architecture | [`docs/architecture.md`](docs/architecture.md) |
 | ADRs | [`docs/adr/`](docs/adr/) |
 | Sprint 0–2 audit | [`docs/AUDIT_CHECKLIST_SPRINT0-2.md`](docs/AUDIT_CHECKLIST_SPRINT0-2.md) |

@@ -158,7 +158,7 @@ export function WorkflowProgress({
                           modelLabel || null,
                           exec.routing_reason,
                           exec.fallback_from_provider
-                            ? `fallback from ${exec.fallback_from_provider}:${exec.fallback_from_model ?? "?"}`
+                            ? `fallback from ${exec.fallback_from_model ?? exec.fallback_from_provider}`
                             : null,
                           exec.cost_usd > 0 ? `$${exec.cost_usd.toFixed(4)}` : null,
                           exec.latency_ms > 0 ? `${Math.round(exec.latency_ms)} ms` : null,

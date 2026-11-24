@@ -1,90 +1,66 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
-import { loginWithGoogle, logoutSession, type SignedInUser } from "@/lib/api";
+import { LogoutButton } from "@/components/LogoutButton";
+import { getCurrentUser, getOperatorId, type SignedInUser } from "@/lib/api";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 
-type GoogleCredential = { credential: string };
-
-type GoogleAccounts = {
-  accounts: {
-    id: {
-      initialize: (config: {
-        client_id: string;
-        callback: (response: GoogleCredential) => void;
-      }) => void;
-      renderButton: (
-        parent: HTMLElement,
-        options: { theme: string; size: string; width?: number },
-      ) => void;
-    };
-  };
-};
-
-declare global {
-  interface Window {
-    google?: GoogleAccounts;
-  }
-}
-
-const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
+const SUPABASE_AUTH = isSupabaseConfigured();
 
 export function AccountMenu() {
-  const buttonRef = useRef<HTMLDivElement>(null);
   const [user, setUser] = useState<SignedInUser | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!CLIENT_ID || !buttonRef.current) {
+    if (!SUPABASE_AUTH) {
+      setUser({
+        id: getOperatorId(),
+        email: "Local development",
+        display_name: getOperatorId(),
+        picture_url: null,
+      });
       return;
     }
-    const parent = buttonRef.current;
-    const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.onload = () => {
-      window.google?.accounts.id.initialize({
-        client_id: CLIENT_ID,
-        callback: (response) => {
-          void loginWithGoogle(response.credential)
-            .then(setUser)
-            .catch((cause: unknown) => {
-              setError(cause instanceof Error ? cause.message : "Google sign-in failed");
-            });
-        },
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      return;
+    }
+    let active = true;
+    void getCurrentUser()
+      .then((nextUser) => {
+        if (active) {
+          setUser(nextUser);
+        }
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setError(cause instanceof Error ? cause.message : "Could not load account");
+        }
       });
-      window.google?.accounts.id.renderButton(parent, { theme: "outline", size: "large" });
-    };
-    document.body.appendChild(script);
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session && active) {
+        setUser(null);
+      }
+    });
     return () => {
-      script.remove();
+      active = false;
+      data.subscription.unsubscribe();
     };
   }, []);
 
   return (
     <div className="field" style={{ marginTop: 16 }}>
-      <span>Google account</span>
+      <span>{SUPABASE_AUTH ? "Google account" : "Local workspace"}</span>
       {user ? (
-        <p className="meta">
-          Signed in as {user.display_name || user.email}
-          <button
-            type="button"
-            className="px-btn ghost"
-            style={{ marginLeft: 8 }}
-            onClick={() => {
-              void logoutSession().then(() => setUser(null));
-            }}
-          >
-            Log out
-          </button>
-        </p>
+        <div className="meta account-session-row">
+          <span>Signed in as {user.display_name || user.email}</span>
+          <LogoutButton />
+        </div>
       ) : (
-        <div ref={buttonRef} />
-      )}
-      {!CLIENT_ID && (
-        <p className="muted">
-          Set NEXT_PUBLIC_GOOGLE_CLIENT_ID and GOOGLE_CLIENT_ID to enable Google sign-in.
-        </p>
+        <p className="muted">No active account session.</p>
       )}
       {error && <p className="muted">{error}</p>}
     </div>

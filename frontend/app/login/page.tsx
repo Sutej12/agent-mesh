@@ -2,97 +2,70 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { BrandLogo } from "@/components/BrandLogo";
 import {
   getOperatorId,
-  loginWithGoogle,
   loginWithPassword,
   markWorkspaceAuthed,
   setOperatorId,
   setSessionToken,
 } from "@/lib/api";
 import { BRAND_TAGLINE } from "@/lib/brand";
+import { requireSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSiteUrl, isSupabaseConfigured } from "@/lib/supabase/config";
 
-const GOOGLE_CLIENT_ID = (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "").trim();
+const SUPABASE_AUTH = isSupabaseConfigured();
 
 export default function LoginPage() {
   const router = useRouter();
-  const buttonRef = useRef<HTMLDivElement>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [operator, setOperator] = useState("");
   const [showLocal, setShowLocal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [googleReady, setGoogleReady] = useState(false);
 
   useEffect(() => {
-    setOperator(getOperatorId());
+    if (!SUPABASE_AUTH) {
+      setOperator(getOperatorId());
+    }
+    const callbackError = new URLSearchParams(window.location.search).get("error");
+    if (callbackError) {
+      const messages: Record<string, string> = {
+        supabase_not_configured: "Supabase authentication is not configured.",
+        missing_oauth_code: "Google did not return an authorization code.",
+        oauth_callback_failed: "Google sign-in could not be completed. Please try again.",
+      };
+      setError(messages[callbackError] ?? "Google sign-in could not be completed.");
+    }
   }, []);
 
-  useEffect(() => {
-    if (!GOOGLE_CLIENT_ID || !buttonRef.current) {
-      return;
+  const startGoogleLogin = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const supabase = requireSupabaseBrowserClient();
+      const { error: authError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${getSiteUrl()}/auth/callback?next=/office` },
+      });
+      if (authError) {
+        throw authError;
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Google sign-in failed");
+      setBusy(false);
     }
-    const parent = buttonRef.current;
-    let cancelled = false;
-    const script = document.createElement("script");
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.onload = () => {
-      if (cancelled || !parent.isConnected) {
-        return;
-      }
-      try {
-        window.google?.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          callback: (response) => {
-            setBusy(true);
-            setError(null);
-            void loginWithGoogle(response.credential)
-              .then((user) => {
-                setOperatorId(user.id);
-                markWorkspaceAuthed();
-                router.push("/office");
-              })
-              .catch((cause) => {
-                setError(cause instanceof Error ? cause.message : "Google sign-in failed");
-              })
-              .finally(() => setBusy(false));
-          },
-        });
-        parent.innerHTML = "";
-        window.google?.accounts.id.renderButton(parent, {
-          theme: "filled_black",
-          size: "large",
-          width: 320,
-        });
-        setGoogleReady(true);
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Google button failed to load");
-      }
-    };
-    script.onerror = () => {
-      setError("Could not load Google sign-in. Use email and password below.");
-    };
-    document.head.appendChild(script);
-    return () => {
-      cancelled = true;
-      script.remove();
-    };
-  }, [router]);
+  };
 
   const onPasswordLogin = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const user = await loginWithPassword({
-        email: email.trim(),
-        password,
-      });
+      const user = await loginWithPassword({ email: email.trim(), password });
       setOperatorId(user.id);
       markWorkspaceAuthed();
       router.push("/office");
@@ -119,103 +92,121 @@ export default function LoginPage() {
         <h1>Log in</h1>
         <p className="login-tagline">{BRAND_TAGLINE}</p>
 
-        <form onSubmit={onPasswordLogin} className="stack-gap">
-          <label className="field">
-            <span>Email</span>
-            <input
-              data-testid="login-email"
-              type="email"
-              required
-              value={email}
+        {SUPABASE_AUTH ? (
+          <div className="stack-gap">
+            <button
+              type="button"
+              className="px-btn primary"
               disabled={busy}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
-              autoComplete="email"
-            />
-          </label>
-          <label className="field">
-            <span>Password</span>
-            <input
-              data-testid="login-password"
-              type="password"
-              required
-              value={password}
-              disabled={busy}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Your password"
-              autoComplete="current-password"
-            />
-          </label>
-          {error && (
-            <p className="banner-err" role="alert">
-              {error}
+              data-testid="google-signin"
+              onClick={() => void startGoogleLogin()}
+            >
+              {busy ? "Opening Google…" : "Continue with Google"}
+            </button>
+            <p className="meta" style={{ margin: 0 }}>
+              Google authentication is securely managed by Supabase.
             </p>
-          )}
-          <button type="submit" className="px-btn primary" disabled={busy} data-testid="login-submit">
-            {busy ? "Signing in…" : "Log in"}
-          </button>
-        </form>
-
-        <div className="login-divider" aria-hidden>
-          <span>or Google</span>
-        </div>
-
-        {GOOGLE_CLIENT_ID ? (
-          <div className="login-google">
-            <div ref={buttonRef} data-testid="google-signin" />
-            {busy && <p className="meta">Signing in…</p>}
-            {!googleReady && <p className="meta">Loading Google button…</p>}
           </div>
         ) : (
-          <p className="meta" data-testid="login-google-hint">
-            Google sign-in is optional when configured.
+          <>
+            <form onSubmit={onPasswordLogin} className="stack-gap">
+              <label className="field">
+                <span>Email</span>
+                <input
+                  data-testid="login-email"
+                  type="email"
+                  required
+                  value={email}
+                  disabled={busy}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                />
+              </label>
+              <label className="field">
+                <span>Password</span>
+                <input
+                  data-testid="login-password"
+                  type="password"
+                  required
+                  value={password}
+                  disabled={busy}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Your password"
+                  autoComplete="current-password"
+                />
+              </label>
+              <button
+                type="submit"
+                className="px-btn primary"
+                disabled={busy}
+                data-testid="login-submit"
+              >
+                {busy ? "Signing in…" : "Log in"}
+              </button>
+            </form>
+
+            <button
+              type="button"
+              className="meta"
+              style={{
+                marginTop: 12,
+                background: "none",
+                border: "none",
+                padding: 0,
+                color: "inherit",
+                cursor: "pointer",
+                textDecoration: "underline",
+              }}
+              onClick={() => setShowLocal((value) => !value)}
+            >
+              {showLocal ? "Hide local workspace" : "Continue with a local workspace name"}
+            </button>
+
+            {showLocal && (
+              <form onSubmit={continueAsOperator} className="stack-gap" style={{ marginTop: 12 }}>
+                <label className="field">
+                  <span>Workspace name</span>
+                  <input
+                    data-testid="login-operator"
+                    value={operator}
+                    disabled={busy}
+                    onChange={(event) => setOperator(event.target.value)}
+                    placeholder="operator"
+                    autoComplete="username"
+                  />
+                </label>
+                <p className="meta" style={{ margin: 0 }}>
+                  Development-only access; production should configure Supabase.
+                </p>
+                <button
+                  type="submit"
+                  className="px-btn"
+                  disabled={busy}
+                  data-testid="login-continue"
+                >
+                  Continue to workspace
+                </button>
+              </form>
+            )}
+          </>
+        )}
+
+        {error && (
+          <p className="banner-err" role="alert">
+            {error}
           </p>
         )}
 
         <p className="meta" style={{ marginTop: 16 }}>
-          New here? <Link href="/signup">Sign up</Link>
-          {" · "}
+          {!SUPABASE_AUTH && (
+            <>
+              New here? <Link href="/signup">Sign up</Link>
+              {" · "}
+            </>
+          )}
           <Link href="/">Back to product site</Link>
         </p>
-
-        <button
-          type="button"
-          className="meta"
-          style={{
-            marginTop: 12,
-            background: "none",
-            border: "none",
-            padding: 0,
-            color: "inherit",
-            cursor: "pointer",
-            textDecoration: "underline",
-          }}
-          onClick={() => setShowLocal((value) => !value)}
-        >
-          {showLocal ? "Hide local workspace" : "Continue with a local workspace name"}
-        </button>
-
-        {showLocal && (
-          <form onSubmit={continueAsOperator} className="stack-gap" style={{ marginTop: 12 }}>
-            <label className="field">
-              <span>Workspace name</span>
-              <input
-                data-testid="login-operator"
-                value={operator}
-                disabled={busy}
-                onChange={(event) => setOperator(event.target.value)}
-                placeholder="operator"
-                autoComplete="username"
-              />
-            </label>
-            <p className="meta" style={{ margin: 0 }}>
-              Local-only access is not stored as a registered account.
-            </p>
-            <button type="submit" className="px-btn" disabled={busy} data-testid="login-continue">
-              Continue to workspace
-            </button>
-          </form>
-        )}
       </section>
     </main>
   );

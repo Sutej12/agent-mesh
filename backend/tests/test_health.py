@@ -37,7 +37,7 @@ async def test_readiness_is_ready_when_dependencies_are_healthy(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def healthy_postgres(_url: str) -> DependencyStatus:
+    async def healthy_postgres(_url: str, **_kwargs: object) -> DependencyStatus:
         return DependencyStatus(name="postgres", healthy=True, latency_ms=1.0)
 
     async def healthy_redis(_url: str) -> DependencyStatus:
@@ -58,7 +58,7 @@ async def test_readiness_is_degraded_with_503_when_a_dependency_fails(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def healthy_postgres(_url: str) -> DependencyStatus:
+    async def healthy_postgres(_url: str, **_kwargs: object) -> DependencyStatus:
         return DependencyStatus(name="postgres", healthy=True, latency_ms=1.0)
 
     async def broken_redis(_url: str) -> DependencyStatus:

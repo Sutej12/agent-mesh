@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents.registry import AgentRegistry, DatabaseAgentRegistry
 from app.core.config import Settings
-from app.core.identity import OperatorIdentity, resolve_operator
+from app.core.identity import OperatorIdentity, bearer_token, resolve_operator
 from app.core.redis_client import memory_store_from_request, redis_from_request
 from app.orchestration.capability_analysis import CapabilityAnalyser
 from app.providers.registry import ProviderRegistry
@@ -72,10 +72,26 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 async def get_operator(request: Request, settings: SettingsDep) -> OperatorIdentity:
     """Resolve the calling operator.
 
-    ``google`` mode ignores ``X-Operator-Id``. The header is chosen by the browser and
-    is not proof of identity. Header and dev modes do not open a database session.
+    ``google`` and ``supabase`` modes ignore ``X-Operator-Id``. The header is chosen by
+    the browser and is not proof of identity. Header and dev modes do not open a
+    database session.
     """
-    if settings.auth_mode == "google":
+    if settings.auth_mode == "supabase":
+        from app.core.supabase_auth import verify_supabase_access_token
+
+        token = bearer_token(request)
+        if token is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Supabase sign-in required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        identity = await verify_supabase_access_token(
+            token,
+            settings,
+            signing_key=getattr(request.app.state, "supabase_token_key", None),
+        )
+    elif settings.auth_mode == "google":
         from app.api.routes.auth import operator_from_session
 
         factory = getattr(request.app.state, "session_factory", None)

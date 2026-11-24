@@ -18,6 +18,8 @@ import type {
   RoutingStrategy,
   WorkflowView,
 } from "./types";
+import { getSupabaseBrowserClient } from "./supabase/client";
+import { isSupabaseConfigured } from "./supabase/config";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -115,18 +117,52 @@ export function describeErrorDetail(detail: unknown): string {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return requestAttempt<T>(path, init, true);
+}
+
+async function authenticationHeaders(): Promise<Record<string, string>> {
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      return {};
+    }
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      throw new ApiError("Could not read the Supabase session", 401);
+    }
+    return data.session?.access_token
+      ? { Authorization: `Bearer ${data.session.access_token}` }
+      : {};
+  }
+
   const session = getSessionToken();
+  return session
+    ? { Authorization: `Bearer ${session}` }
+    : { "X-Operator-Id": getOperatorId() };
+}
+
+async function requestAttempt<T>(
+  path: string,
+  init: RequestInit | undefined,
+  canRefresh: boolean,
+): Promise<T> {
+  const authHeaders = await authenticationHeaders();
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(session
-        ? { Authorization: `Bearer ${session}` }
-        : { "X-Operator-Id": getOperatorId() }),
+      ...authHeaders,
       ...(init?.headers ?? {}),
     },
   });
+  if (response.status === 401 && canRefresh && isSupabaseConfigured()) {
+    const supabase = getSupabaseBrowserClient();
+    const { data } = (await supabase?.auth.refreshSession()) ?? { data: { session: null } };
+    if (data.session) {
+      return requestAttempt<T>(path, init, false);
+    }
+  }
   if (!response.ok) {
     let detail = response.statusText;
     try {
@@ -195,10 +231,20 @@ export async function loginWithPassword(input: {
   return result.user;
 }
 
+export async function getCurrentUser(): Promise<SignedInUser> {
+  return request<SignedInUser>("/api/v1/auth/me");
+}
+
 export async function logoutSession(): Promise<void> {
   try {
     await request<void>("/api/v1/auth/logout", { method: "POST" });
+  } catch {
+    // Supabase owns the browser session. A stale/unreachable API must not trap the
+    // user in the UI when they explicitly request local sign-out.
   } finally {
+    if (isSupabaseConfigured()) {
+      await getSupabaseBrowserClient()?.auth.signOut({ scope: "local" });
+    }
     clearWorkspaceAuth();
   }
 }

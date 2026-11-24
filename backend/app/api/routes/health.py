@@ -11,11 +11,12 @@ import asyncio
 from dataclasses import asdict
 from typing import Literal
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Request, Response, status
 from pydantic import BaseModel, Field
 
 from app.api.dependencies import SettingsDep
 from app.core.health import check_postgres, check_redis
+from app.database.tls import database_ssl_context
 
 router = APIRouter(tags=["health"])
 
@@ -49,14 +50,25 @@ async def liveness(settings: SettingsDep) -> LivenessResponse:
 
 
 @router.get("/readyz", response_model=ReadinessResponse, summary="Readiness probe")
-async def readiness(settings: SettingsDep, response: Response) -> ReadinessResponse:
+async def readiness(
+    settings: SettingsDep, request: Request, response: Response
+) -> ReadinessResponse:
     """Report whether dependencies needed to serve traffic are reachable.
 
     Checks run concurrently so the probe's latency is the slowest dependency rather than
     their sum. A degraded result returns 503 so load balancers stop sending traffic.
     """
+    engine = getattr(request.app.state, "engine", None)
+    ssl_context = database_ssl_context(settings)
+    if engine is not None:
+        postgres_check = check_postgres(settings.database_url, engine=engine)
+    elif ssl_context is not None:
+        postgres_check = check_postgres(settings.database_url, ssl_context=ssl_context)
+    else:
+        postgres_check = check_postgres(settings.database_url)
+
     postgres, redis_status = await asyncio.gather(
-        check_postgres(settings.database_url),
+        postgres_check,
         check_redis(settings.redis_url),
     )
     dependencies = [postgres, redis_status]

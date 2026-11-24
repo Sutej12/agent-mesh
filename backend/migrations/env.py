@@ -20,6 +20,7 @@ import app.models  # noqa: F401  (side-effect import)
 from app.core.config import get_settings
 from app.database.base import Base
 from app.database.session import create_engine_from_url
+from app.database.tls import database_ssl_context
 
 config = context.config
 
@@ -59,7 +60,12 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_migrations_online() -> None:
-    engine = create_engine_from_url(database_url())
+    settings = get_settings()
+    ssl_context = database_ssl_context(settings)
+    engine = create_engine_from_url(
+        database_url(),
+        connect_args={"ssl": ssl_context} if ssl_context is not None else None,
+    )
     try:
         async with engine.connect() as connection:
             await connection.run_sync(do_run_migrations)

@@ -296,6 +296,54 @@ async def test_http_status_maps_to_the_shared_taxonomy(
     assert caught.value.status_code == status_code
 
 
+async def test_bare_503_has_actionable_retry_guidance() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="   ")
+
+    provider = GeminiProvider("google-test", client=stub_transport(handler))
+
+    with pytest.raises(ProviderError) as caught:
+        await provider.generate(request_for(provider.models[0]))
+
+    assert caught.value.kind is ErrorKind.PROVIDER_UNAVAILABLE
+    assert caught.value.status_code == 503
+    assert "temporarily overloaded or unavailable" in caught.value.message
+    assert "Retry shortly" in caught.value.message
+
+
+async def test_bare_429_preserves_retry_after_and_has_actionable_guidance() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={"Retry-After": "17"}, text="   ")
+
+    provider = GeminiProvider("google-test", client=stub_transport(handler))
+
+    with pytest.raises(ProviderError) as caught:
+        await provider.generate(request_for(provider.models[0]))
+
+    assert caught.value.kind is ErrorKind.RATE_LIMITED
+    assert caught.value.status_code == 429
+    assert caught.value.retry_after_seconds == 17.0
+    assert "rate limit or quota reached" in caught.value.message
+    assert "Retry after 17 seconds" in caught.value.message
+
+
+async def test_invalid_retry_after_is_safely_ignored() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429,
+            headers={"Retry-After": "not-a-delay"},
+            json={"error": {"message": "slow down"}},
+        )
+
+    provider = OpenAIProvider("sk-test", client=stub_transport(handler))
+
+    with pytest.raises(ProviderError) as caught:
+        await provider.generate(request_for(provider.models[0]))
+
+    assert caught.value.kind is ErrorKind.RATE_LIMITED
+    assert caught.value.retry_after_seconds is None
+
+
 async def test_context_length_error_is_distinguished_from_a_generic_400() -> None:
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(

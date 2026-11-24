@@ -22,15 +22,23 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import uuid
 from dataclasses import dataclass, field
 
 from app.agents.registry import AgentRegistry
 from app.core.logging import get_logger
-from app.domain.enums import DecisionKind, ExecutionStatus, NodeStatus, TaskStatus, WorkflowStatus
+from app.domain.enums import (
+    DecisionKind,
+    ErrorKind,
+    ExecutionStatus,
+    NodeStatus,
+    TaskStatus,
+    WorkflowStatus,
+)
 from app.messaging.store import DecisionService
-from app.schemas.agent import AgentDefinition
-from app.schemas.execution import AgentInput, AgentOutput, UpstreamResult
+from app.schemas.agent import AgentDefinition, RetryPolicy
+from app.schemas.execution import AgentInput, AgentOutput, ExecutionError, UpstreamResult
 from app.schemas.memory import DecisionCreate
 from app.schemas.workflow import FeedbackRule, WorkflowNode, WorkflowPlan
 from app.services import hive as hive_service
@@ -44,6 +52,39 @@ from app.workflows.synthesis import synthesise
 logger = get_logger(__name__)
 
 _MAX_FEEDBACK_CHARS = 2_000
+_RATE_LIMIT_BACKOFF_FLOOR_SECONDS = 10.0
+_MAX_PROVIDER_RETRY_AFTER_SECONDS = 300.0
+
+
+def _retry_delay_seconds(
+    policy: RetryPolicy,
+    attempt: int,
+    previous_error: ExecutionError | None,
+) -> float:
+    """Delay before an attempt, respecting provider rate-limit instructions.
+
+    The ordinary agent policy remains authoritative for every other failure. A 429 gets
+    a larger exponential floor when the provider supplied no guidance, while an explicit
+    ``Retry-After`` is honoured up to a five-minute safety cap so a malformed header
+    cannot park a workflow indefinitely.
+    """
+    policy_delay = policy.backoff_for_attempt(attempt)
+    if attempt <= 1 or previous_error is None or previous_error.kind is not ErrorKind.RATE_LIMITED:
+        return policy_delay
+
+    advertised = previous_error.details.get("retry_after_seconds")
+    if (
+        isinstance(advertised, int | float)
+        and not isinstance(advertised, bool)
+        and math.isfinite(float(advertised))
+    ):
+        return max(
+            policy_delay,
+            min(max(0.0, float(advertised)), _MAX_PROVIDER_RETRY_AFTER_SECONDS),
+        )
+
+    floor = _RATE_LIMIT_BACKOFF_FLOOR_SECONDS * (policy.backoff_multiplier ** (attempt - 2))
+    return max(policy_delay, min(floor, policy.max_backoff_seconds))
 
 
 @dataclass(slots=True)
@@ -447,9 +488,10 @@ class WorkflowEngine:
         already_used = state.attempts.get(agent_input.node_key, 0)
         feedback = agent_input.feedback
         outputs: list[AgentOutput] = []
+        previous_error: ExecutionError | None = None
 
         for index in range(1, agent.retry_policy.max_attempts + 1):
-            if delay := agent.retry_policy.backoff_for_attempt(index):
+            if delay := _retry_delay_seconds(agent.retry_policy, index, previous_error):
                 await asyncio.sleep(delay)
 
             attempt_input = agent_input.model_copy(
@@ -463,6 +505,7 @@ class WorkflowEngine:
 
             if output.succeeded:
                 break
+            previous_error = output.error
             if output.error is not None and not output.error.is_retryable:
                 logger.info(
                     "retry_abandoned",

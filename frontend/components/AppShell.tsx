@@ -16,6 +16,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
 import { BrandLogo } from "@/components/BrandLogo";
+import { LogoutButton } from "@/components/LogoutButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BRAND_NAME, BRAND_TAGLINE } from "@/lib/brand";
 
@@ -128,6 +129,7 @@ export function AppShell({
             <button type="button" className="px-btn primary" onClick={onNewTask}>
               New request
             </button>
+            <LogoutButton className="topbar-logout" />
           </div>
         </header>
 

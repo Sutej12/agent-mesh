@@ -126,7 +126,7 @@ class AgentExecutor:
                 handoff_timeout_seconds=FALLBACK_HANDOFF_SECONDS if has_fallback else None,
             )
             alternatives = tuple(
-                f"{item.provider.name}:{item.model.id}"
+                item.model.id
                 for item in ranked[index + 1 : index + 6]
                 if item.provider.name not in skipped_providers
             )
@@ -144,12 +144,11 @@ class AgentExecutor:
             if not _can_fallback(annotated):
                 return annotated
             # Provider-wide failures skip every remaining model on that adapter.
-            # Model-specific failures (404, per-model quota, bad output) try the next
-            # ranked model — often another id on the same vendor.
-            if annotated.error is not None and annotated.error.kind in {
-                ErrorKind.AUTHENTICATION,
-                ErrorKind.PROVIDER_UNAVAILABLE,
-            }:
+            # A 503 is deliberately *not* treated as provider-wide: vendors such as
+            # Gemini use it when one model is overloaded, so another model on the same
+            # API/key can still succeed. Transport failures and other 5xx responses
+            # continue to hand off directly to another provider.
+            if annotated.error is not None and _failure_blocks_provider(annotated.error):
                 skipped_providers.add(provider.name)
             nxt = next(
                 (
@@ -247,6 +246,11 @@ class AgentExecutor:
                 error_kind=exc.kind.value,
                 retryable=exc.is_retryable,
             )
+            details: dict[str, object] = {}
+            if exc.status_code is not None:
+                details["status_code"] = exc.status_code
+            if exc.retry_after_seconds is not None:
+                details["retry_after_seconds"] = exc.retry_after_seconds
             return self._failure(
                 agent,
                 agent_input,
@@ -255,6 +259,7 @@ class AgentExecutor:
                     message=exc.message,
                     retryable=exc.is_retryable,
                     provider=exc.provider,
+                    details=details,
                 ),
                 started_at,
                 started,
@@ -415,8 +420,9 @@ def _can_fallback(output: AgentOutput) -> bool:
     """Whether another ranked model might succeed where this one did not.
 
     Hard stops: authentication (same key fails across that vendor's catalogue) and
-    budget / cancel. Everything else — including model-not-found 404s, per-model rate
-    limits, and invalid output — can try the next candidate.
+    budget / cancel. Rate limits remain eligible for fallback because a different
+    provider may still serve the request; ``_failure_blocks_provider`` prevents trying
+    more models on the already-limited provider.
     """
     if output.error is None:
         return False
@@ -426,6 +432,23 @@ def _can_fallback(output: AgentOutput) -> bool:
         ErrorKind.CANCELLED,
         ErrorKind.INVALID_REQUEST,
     }
+
+
+def _failure_blocks_provider(error: ExecutionError) -> bool:
+    """Whether the failure makes every other model on this provider unusable.
+
+    Authentication and rate limits generally apply to the credential/project, so another
+    model on the same provider would only add load; another provider remains eligible.
+    A transport failure has no HTTP status and is adapter-wide. Most upstream 5xx
+    responses are treated the same way. HTTP 503 is the important exception: several
+    model APIs use it for model-specific capacity pressure, so the next catalogue model
+    is a useful fallback before abandoning the provider entirely.
+    """
+    if error.kind in {ErrorKind.AUTHENTICATION, ErrorKind.RATE_LIMITED}:
+        return True
+    if error.kind is not ErrorKind.PROVIDER_UNAVAILABLE:
+        return False
+    return error.details.get("status_code") != 503
 
 
 def _input_document(agent_input: AgentInput) -> dict[str, object]:

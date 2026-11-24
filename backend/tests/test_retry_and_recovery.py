@@ -31,6 +31,7 @@ from app.orchestration.selection import AgentSelector
 from app.providers.fake import FakeProvider
 from app.providers.registry import ProviderRegistry
 from app.schemas.agent import RetryPolicy
+from app.schemas.execution import ExecutionError
 from app.schemas.workflow import (
     EdgeCondition,
     FeedbackRule,
@@ -42,7 +43,7 @@ from app.schemas.workflow import (
 from app.services.agent_executor import AgentExecutor
 from app.services.orchestration_service import OrchestrationService
 from app.services.workflow_repository import WorkflowRepository
-from app.workflows.engine import WorkflowEngine, WorkflowRun
+from app.workflows.engine import WorkflowEngine, WorkflowRun, _retry_delay_seconds
 
 
 def engine_for(
@@ -218,6 +219,39 @@ async def test_backoff_is_taken_from_the_agents_own_policy(
     assert policy.backoff_for_attempt(2) == 2.0
     assert policy.backoff_for_attempt(3) == 6.0
     assert policy.backoff_for_attempt(9) == policy.max_backoff_seconds
+
+
+def test_rate_limit_backoff_uses_a_larger_capped_floor() -> None:
+    policy = RetryPolicy(
+        max_attempts=3,
+        initial_backoff_seconds=1.0,
+        backoff_multiplier=2.0,
+        max_backoff_seconds=30.0,
+    )
+    error = ExecutionError(kind=ErrorKind.RATE_LIMITED, message="slow down")
+
+    assert _retry_delay_seconds(policy, 2, error) == 10.0
+    assert _retry_delay_seconds(policy, 3, error) == 20.0
+
+
+def test_rate_limit_backoff_honours_retry_after_with_a_safety_cap() -> None:
+    policy = RetryPolicy(initial_backoff_seconds=1.0, max_backoff_seconds=30.0)
+    instructed = ExecutionError(
+        kind=ErrorKind.RATE_LIMITED,
+        message="slow down",
+        details={"retry_after_seconds": 47.0},
+    )
+    excessive = instructed.model_copy(update={"details": {"retry_after_seconds": 3_600.0}})
+
+    assert _retry_delay_seconds(policy, 2, instructed) == 47.0
+    assert _retry_delay_seconds(policy, 2, excessive) == 300.0
+
+
+def test_zero_backoff_policy_keeps_rate_limit_tests_instant_without_retry_after() -> None:
+    policy = RetryPolicy(initial_backoff_seconds=0.0, max_backoff_seconds=0.0)
+    error = ExecutionError(kind=ErrorKind.RATE_LIMITED, message="slow down")
+
+    assert _retry_delay_seconds(policy, 2, error) == 0.0
 
 
 # ---------------------------------------------------------------------------

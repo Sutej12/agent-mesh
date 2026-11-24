@@ -17,7 +17,8 @@ from pydantic import AliasChoices, Field, SecretStr, field_validator, model_vali
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 Environment = Literal["development", "test", "staging", "production"]
-AuthMode = Literal["off", "header", "google"]
+AuthMode = Literal["off", "header", "google", "supabase"]
+DatabaseSslMode = Literal["disable", "require", "verify-ca", "verify-full"]
 
 
 class Settings(BaseSettings):
@@ -39,7 +40,8 @@ class Settings(BaseSettings):
     # ---- Auth foundations (Universal Office Sprint 9) ----
     # ``off`` — resolve a default operator (dev/tests); still stamps ownership.
     # ``header`` — require X-Operator-Id or Bearer.
-    # ``google`` — require a server-issued session (Google ID token exchanged for a JWT).
+    # ``google`` — require a legacy server-issued Agent Mesh session.
+    # ``supabase`` — require a Supabase access token verified against the project's JWKS.
     # Production forbids ``off`` (see ``_production_invariants``).
     auth_mode: AuthMode = "header"
     # Used when auth_mode=off and no identity header is present.
@@ -63,6 +65,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://agentorch:agentorch@localhost:5432/agentorch"
     database_pool_size: int = Field(default=5, ge=1, le=50)
     database_max_overflow: int = Field(default=10, ge=0, le=50)
+    database_pool_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
+    database_pool_recycle_seconds: int = Field(default=1_800, ge=-1, le=86_400)
+    database_ssl_mode: DatabaseSslMode = "disable"
+    database_ssl_ca_file: str | None = None
     redis_url: str = "redis://localhost:6379/0"
 
     # ---- Agent registry ----
@@ -141,6 +147,13 @@ class Settings(BaseSettings):
     # Google OAuth client ID (audience). The client secret is not used: the browser
     # obtains an ID token and the API verifies it. Never put a client secret here.
     google_client_id: str | None = None
+
+    # Supabase Auth access-token verification. Issuer and JWKS URL derive from the
+    # project URL unless explicitly supplied (useful for local Supabase and tests).
+    supabase_url: str | None = None
+    supabase_jwt_issuer: str | None = None
+    supabase_jwks_url: str | None = None
+    supabase_jwt_audience: str = "authenticated"
     # Where generated files are stored. The download API checks ownership and never
     # returns this path to clients.
     artifact_dir: str = "data/artifacts"
@@ -161,15 +174,28 @@ class Settings(BaseSettings):
             return None
         return value
 
+    @field_validator(
+        "database_ssl_ca_file",
+        "supabase_url",
+        "supabase_jwt_issuer",
+        "supabase_jwks_url",
+        mode="before",
+    )
+    @classmethod
+    def _blank_optional_string_is_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @field_validator("database_url", mode="before")
     @classmethod
     def _normalise_database_url(cls, value: object) -> object:
         """Accept a managed ``postgres(ql)://`` URL and target the asyncpg driver.
 
-        Managed hosts (Render, Heroku, …) hand out ``postgres://`` or ``postgresql://``
-        connection strings, but the async stack needs ``postgresql+asyncpg://``. A
-        libpq-only ``sslmode`` query param is dropped because asyncpg does not accept it;
-        managed internal connections do not require it.
+        Managed hosts hand out ``postgres://`` or ``postgresql://`` connection strings,
+        but the async stack needs ``postgresql+asyncpg://``. A libpq-only ``sslmode``
+        query parameter is removed because asyncpg receives TLS configuration through
+        ``DATABASE_SSL_MODE`` and ``DATABASE_SSL_CA_FILE`` instead.
         """
         if not isinstance(value, str) or not value:
             return value
@@ -196,9 +222,23 @@ class Settings(BaseSettings):
 
         errors: list[str] = []
         if self.auth_mode == "off":
-            errors.append("AUTH_MODE=off is forbidden in production (use header or google)")
+            errors.append(
+                "AUTH_MODE=off is forbidden in production (use header, google, or supabase)"
+            )
         if self.auth_mode == "google" and not (self.google_client_id or "").strip():
             errors.append("GOOGLE_CLIENT_ID is required when AUTH_MODE=google")
+        if self.auth_mode == "supabase" and not (self.supabase_url or "").strip():
+            errors.append("SUPABASE_URL is required when AUTH_MODE=supabase")
+        if (
+            self.auth_mode == "supabase"
+            and self.supabase_url
+            and not self.supabase_url.startswith("https://")
+        ):
+            errors.append("SUPABASE_URL must use HTTPS in production")
+        if self.auth_mode == "supabase" and not self.supabase_jwt_audience.strip():
+            errors.append("SUPABASE_JWT_AUDIENCE is required when AUTH_MODE=supabase")
+        if self.auth_mode == "supabase" and self.database_ssl_mode == "disable":
+            errors.append("DATABASE_SSL_MODE must require TLS when AUTH_MODE=supabase")
         if self.debug:
             errors.append("DEBUG must be false in production")
         if self.seed_agents_on_startup:
@@ -207,7 +247,7 @@ class Settings(BaseSettings):
         if not key.strip():
             errors.append("ENCRYPTION_KEY is required in production")
         jwt = self.jwt_secret.get_secret_value() if self.jwt_secret is not None else ""
-        if not jwt.strip():
+        if self.auth_mode != "supabase" and not jwt.strip():
             errors.append("JWT_SECRET is required in production")
         if not self.cors_allow_origins:
             errors.append("CORS_ALLOW_ORIGINS must list at least one origin in production")
@@ -224,6 +264,21 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @property
+    def effective_supabase_issuer(self) -> str | None:
+        if self.supabase_jwt_issuer:
+            return self.supabase_jwt_issuer.rstrip("/")
+        if self.supabase_url:
+            return f"{self.supabase_url.rstrip('/')}/auth/v1"
+        return None
+
+    @property
+    def effective_supabase_jwks_url(self) -> str | None:
+        if self.supabase_jwks_url:
+            return self.supabase_jwks_url
+        issuer = self.effective_supabase_issuer
+        return f"{issuer}/.well-known/jwks.json" if issuer else None
 
     def configured_providers(self) -> list[str]:
         """Names of providers that have a credential present.

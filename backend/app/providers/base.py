@@ -11,6 +11,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 
 from app.domain.enums import ErrorKind, ModelTrait
 from app.schemas.execution import TokenUsage
@@ -31,17 +33,39 @@ class ProviderError(Exception):
         provider: str,
         retryable: bool | None = None,
         status_code: int | None = None,
+        retry_after_seconds: float | None = None,
     ) -> None:
         super().__init__(message)
         self.kind = kind
         self.message = message
         self.provider = provider
         self.status_code = status_code
+        self.retry_after_seconds = retry_after_seconds
         self._retryable = retryable
 
     @property
     def is_retryable(self) -> bool:
         return self.kind.is_retryable if self._retryable is None else self._retryable
+
+
+def parse_retry_after_seconds(value: str | None) -> float | None:
+    """Parse a standard ``Retry-After`` value into a non-negative delay.
+
+    Providers may send either delta-seconds or an HTTP date. Invalid values are ignored
+    rather than turning an upstream rate-limit response into an adapter failure.
+    """
+    if value is None or not value.strip():
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        return max(0.0, (retry_at - datetime.now(UTC)).total_seconds())
 
 
 class ProviderConfigurationError(ProviderError):

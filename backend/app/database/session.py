@@ -17,23 +17,39 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import Settings
+from app.database.tls import database_ssl_context
 
 
-def create_engine_from_url(url: str, *, pool_size: int = 5, max_overflow: int = 10) -> AsyncEngine:
+def create_engine_from_url(
+    url: str,
+    *,
+    pool_size: int = 5,
+    max_overflow: int = 10,
+    pool_timeout: float = 10.0,
+    pool_recycle: int = 1_800,
+    connect_args: dict[str, object] | None = None,
+) -> AsyncEngine:
     return create_async_engine(
         url,
         echo=False,
         pool_pre_ping=True,  # a recycled connection killed by the DB fails fast, not mid-query
         pool_size=pool_size,
         max_overflow=max_overflow,
+        pool_timeout=pool_timeout,
+        pool_recycle=pool_recycle,
+        connect_args=connect_args or {},
     )
 
 
 def create_engine(settings: Settings) -> AsyncEngine:
+    ssl_context = database_ssl_context(settings)
     return create_engine_from_url(
         settings.database_url,
         pool_size=settings.database_pool_size,
         max_overflow=settings.database_max_overflow,
+        pool_timeout=settings.database_pool_timeout_seconds,
+        pool_recycle=settings.database_pool_recycle_seconds,
+        connect_args={"ssl": ssl_context} if ssl_context is not None else None,
     )
 
 

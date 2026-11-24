@@ -494,6 +494,95 @@ async def test_provider_unavailability_falls_back_to_the_next_model() -> None:
     assert elapsed < 5.0, f"fallback took {elapsed:.3f}s; acceptance is within 5s"
 
 
+async def test_http_503_tries_another_model_on_the_same_provider() -> None:
+    """A model-capacity 503 must not discard the vendor's whole catalogue."""
+    from app.providers.fake import FAKE_MODELS
+
+    primary, alternate = FAKE_MODELS[1], FAKE_MODELS[0]
+    provider = FakeProvider(models=(primary, alternate))
+    provider.queue_failure(
+        ErrorKind.PROVIDER_UNAVAILABLE,
+        "model is overloaded",
+        model_id=primary.id,
+        status_code=503,
+    )
+    provider.queue_json({"answer": "from-alternate"}, model_id=alternate.id)
+    agent = simple_agent()
+
+    output = await executor_with(provider).execute(agent, input_for(agent))
+
+    assert output.status is ExecutionStatus.SUCCEEDED
+    assert output.payload == {"answer": "from-alternate"}
+    assert [request.model.id for request in provider.requests] == [primary.id, alternate.id]
+    assert output.fallback_from_provider == provider.name
+    assert output.fallback_from_model == primary.id
+
+
+async def test_provider_status_code_is_preserved_for_routing() -> None:
+    model = FakeProvider().get_model_capabilities()[0]
+    provider = FakeProvider(models=(model,))
+    provider.queue_failure(
+        ErrorKind.PROVIDER_UNAVAILABLE,
+        "model is overloaded",
+        model_id=model.id,
+        status_code=503,
+    )
+    agent = simple_agent()
+
+    output = await executor_with(provider).execute(agent, input_for(agent))
+
+    assert output.error is not None
+    assert output.error.details["status_code"] == 503
+
+
+async def test_rate_limit_skips_same_provider_models_and_uses_another_provider() -> None:
+    """A project/key limit should not trigger another model on the same adapter."""
+
+    class LimitedProvider(FakeProvider):
+        name = "limited"
+
+    limited = LimitedProvider()
+    limited.queue_failure(
+        ErrorKind.RATE_LIMITED,
+        "project rate limit",
+        status_code=429,
+        retry_after_seconds=20.0,
+    )
+    backup = FakeProvider()
+    backup.queue_json({"answer": "from-backup"})
+    agent = simple_agent()
+
+    output = await AgentExecutor(ProviderRegistry([limited, backup])).execute(
+        agent, input_for(agent)
+    )
+
+    assert output.status is ExecutionStatus.SUCCEEDED
+    assert output.payload == {"answer": "from-backup"}
+    assert output.provider == backup.name
+    assert len(limited.requests) == 1
+    assert len(backup.requests) == 1
+    assert output.fallback_from_provider == limited.name
+    assert output.fallback_from_model == limited.requests[0].model.id
+
+
+async def test_provider_retry_after_is_preserved_for_workflow_backoff() -> None:
+    model = FakeProvider().get_model_capabilities()[0]
+    provider = FakeProvider(models=(model,))
+    provider.queue_failure(
+        ErrorKind.RATE_LIMITED,
+        "slow down",
+        model_id=model.id,
+        status_code=429,
+        retry_after_seconds=23.0,
+    )
+    agent = simple_agent()
+
+    output = await executor_with(provider).execute(agent, input_for(agent))
+
+    assert output.error is not None
+    assert output.error.details == {"status_code": 429, "retry_after_seconds": 23.0}
+
+
 async def test_hung_primary_hands_off_to_fallback_within_five_seconds() -> None:
     """US_09: a hanging primary must yield to the next model within the handoff window."""
     from collections.abc import AsyncIterator

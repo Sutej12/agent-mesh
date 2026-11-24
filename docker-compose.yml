@@ -6,25 +6,6 @@
 name: agent-mesh
 
 services:
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-agentorch}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentorch}
-      POSTGRES_DB: ${POSTGRES_DB:-agentorch}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      # Dependents wait on this, so the backend never starts against a database that is
-      # listening but not yet accepting queries.
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agentorch} -d ${POSTGRES_DB:-agentorch}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 10s
-
   redis:
     image: redis:8-alpine
     # Append-only persistence: Redis is not the source of truth, but surviving a restart
@@ -51,9 +32,15 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-console}
-      # Service names resolve over the compose network, overriding the localhost
-      # defaults that host-based runs use.
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-agentorch}:${POSTGRES_PASSWORD:-agentorch}@postgres:5432/${POSTGRES_DB:-agentorch}
+      # Durable state lives in Supabase. The e2e overlay intentionally overrides this
+      # with its isolated PostgreSQL service so CI remains hermetic.
+      DATABASE_URL: ${COMPOSE_DATABASE_URL:-}
+      DATABASE_SSL_MODE: ${DATABASE_SSL_MODE:-disable}
+      DATABASE_SSL_CA_FILE: ${DATABASE_SSL_CA_FILE:-}
+      DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-5}
+      DATABASE_MAX_OVERFLOW: ${DATABASE_MAX_OVERFLOW:-10}
+      DATABASE_POOL_TIMEOUT_SECONDS: ${DATABASE_POOL_TIMEOUT_SECONDS:-10}
+      DATABASE_POOL_RECYCLE_SECONDS: ${DATABASE_POOL_RECYCLE_SECONDS:-1800}
       REDIS_URL: redis://redis:6379/0
       CORS_ALLOW_ORIGINS: http://localhost:${FRONTEND_PORT:-3000}
     ports:
@@ -62,8 +49,6 @@ services:
       # Source is mounted for reload; the container keeps its own caches out of the way.
       - ./backend:/app
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -82,6 +67,9 @@ services:
       # host-published port.
       BACKEND_INTERNAL_URL: http://backend:8000
       NEXT_PUBLIC_API_BASE_URL: http://localhost:${BACKEND_PORT:-8000}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:-}
       # Same OAuth Web client ID as backend GOOGLE_CLIENT_ID (not a secret).
       # Required for the Google button on /login; leave empty for local operator login.
       NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
@@ -100,6 +88,7 @@ services:
       - ./frontend/components:/app/components
       - ./frontend/public:/app/public
       - ./frontend/next.config.ts:/app/next.config.ts:ro
+      - ./frontend/proxy.ts:/app/proxy.ts:ro
     depends_on:
       backend:
         condition: service_started
@@ -133,5 +122,4 @@ services:
       - prometheus
 
 volumes:
-  postgres-data:
   redis-data:

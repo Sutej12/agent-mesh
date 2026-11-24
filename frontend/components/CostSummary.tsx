@@ -72,7 +72,7 @@ export function CostSummary({ workflow }: { workflow: WorkflowView }) {
                 {node.agent_name || node.agent_id}
                 {exec.fallback_from_provider || exec.fallback_from_model ? (
                   <div className="meta">
-                    Fallback from {exec.fallback_from_provider}:{exec.fallback_from_model}
+                    Fallback from {exec.fallback_from_model ?? exec.fallback_from_provider}
                   </div>
                 ) : null}
                 {exec.routing_reason ? <div className="meta">{exec.routing_reason}</div> : null}

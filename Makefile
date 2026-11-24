@@ -3,6 +3,7 @@
 
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
+TEST_COMPOSE := docker compose -f docker-compose.yml -f docker-compose.e2e.yml
 BACKEND_VENV := backend/.venv/bin
 
 .PHONY: help
@@ -81,7 +82,8 @@ downgrade: ## Roll back one migration
 
 .PHONY: test-db
 test-db: ## Create the database used by integration tests
-	$(COMPOSE) exec postgres psql -U $${POSTGRES_USER:-agentorch} -d postgres \
+	$(TEST_COMPOSE) up -d postgres
+	$(TEST_COMPOSE) exec postgres psql -U $${POSTGRES_USER:-agentorch} -d postgres \
 		-c "CREATE DATABASE $${POSTGRES_DB:-agentorch}_test OWNER $${POSTGRES_USER:-agentorch}" \
 		|| echo "test database already exists"
 
@@ -96,8 +98,9 @@ shell: ## Open a shell in the backend container
 	$(COMPOSE) exec backend bash
 
 .PHONY: psql
-psql: ## Open a psql session against the development database
-	$(COMPOSE) exec postgres psql -U $${POSTGRES_USER:-agentorch} -d $${POSTGRES_DB:-agentorch}
+psql: ## Open psql against the isolated local test database
+	$(TEST_COMPOSE) up -d postgres
+	$(TEST_COMPOSE) exec postgres psql -U $${POSTGRES_USER:-agentorch} -d $${POSTGRES_DB:-agentorch}
 
 .PHONY: build-prod
 build-prod: ## Build the production images
